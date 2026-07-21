@@ -1,0 +1,4 @@
+interface:
+  display_name: "Deek PM"
+  short_description: "Use Deek PM product rules and specs"
+  default_prompt: "Use the Deek PM skill to continue product, prototype, data model, or Electron architecture work."

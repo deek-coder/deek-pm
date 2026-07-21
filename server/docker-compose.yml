@@ -1,0 +1,73 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: deek
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: deek-pm
+    volumes:
+      - deek-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U deek -d deek-pm"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3100
+      DEPLOYMENT_MODE: selfhost
+      INSTANCE_NAME: ${INSTANCE_NAME:-Deek PM Self-hosted}
+      DATABASE_URL: postgresql://deek:${POSTGRES_PASSWORD}@postgres:5432/deek-pm
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:?set DATA_ENCRYPTION_KEY in .env}
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-false}
+      BOOTSTRAP_EMAIL: ${BOOTSTRAP_EMAIL:-}
+      BOOTSTRAP_PASSWORD: ${BOOTSTRAP_PASSWORD:-}
+      BOOTSTRAP_NAME: ${BOOTSTRAP_NAME:-Administrator}
+      BOOTSTRAP_WORKSPACE: ${BOOTSTRAP_WORKSPACE:-My Workspace}
+    ports:
+      - "${PORT:-3100}:3100"
+
+  rustfs:
+    image: rustfs/rustfs:latest
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      RUSTFS_VOLUMES: /data/rustfs{0...3}
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+      RUSTFS_CONSOLE_ADDRESS: 0.0.0.0:9001
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:?set RUSTFS_ACCESS_KEY in .env}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:?set RUSTFS_SECRET_KEY in .env}
+    ports:
+      - "${RUSTFS_API_PORT:-9000}:9000"
+      - "${RUSTFS_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - rustfs_data_0:/data/rustfs0
+      - rustfs_data_1:/data/rustfs1
+      - rustfs_data_2:/data/rustfs2
+      - rustfs_data_3:/data/rustfs3
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  deek-postgres:
+  rustfs_data_0:
+  rustfs_data_1:
+  rustfs_data_2:
+  rustfs_data_3:
