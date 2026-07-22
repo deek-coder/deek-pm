@@ -73,7 +73,7 @@ import { officialServiceUrl, useRuntimeConfig, type SavedServiceConnection } fro
 import { ServiceStorageSettingsCard } from '../settings/ServiceStorageSettingsCard'
 import { LocalStorageSettingsCard } from '../settings/LocalStorageSettingsCard'
 import { changeServicePassword } from '../settings/serviceAccountApi'
-import { createServerRepositories, getServiceInstance, loginToService, normalizeServiceUrl, setupService } from '../../repositories/serverRepository'
+import { createServerRepositories, getServiceInstance, isInsecureRemoteServiceUrl, loginToService, normalizeServiceUrl, setupService } from '../../repositories/serverRepository'
 import { ThemeSettingsCard } from '../../theme/ThemeSettingsCard'
 import { useTheme } from '../../theme/themeContext'
 import { migrateLocalBackupToService } from './migrateLocalBackup'
@@ -151,13 +151,16 @@ export function LaunchPage() {
   const [serviceEmail, setServiceEmail] = useState('')
   const [servicePassword, setServicePassword] = useState('')
   const [serviceMessage, setServiceMessage] = useState('')
+  const [serviceMessageIsError, setServiceMessageIsError] = useState(false)
   const [connectingService, setConnectingService] = useState(false)
   const [serviceSetupRequired, setServiceSetupRequired] = useState(false)
+  const [serviceLoginRequired, setServiceLoginRequired] = useState(false)
+  const [allowInsecureService, setAllowInsecureService] = useState(false)
   const [setupToken, setSetupToken] = useState('')
   const [setupName, setSetupName] = useState('Administrator')
   const [setupWorkspaceName, setSetupWorkspaceName] = useState('My Workspace')
   const [setupPasswordConfirm, setSetupPasswordConfirm] = useState('')
-  const [setupStorageDriver, setSetupStorageDriver] = useState<'filesystem' | 's3'>('s3')
+  const [setupStorageDriver, setSetupStorageDriver] = useState<'filesystem' | 's3'>('filesystem')
   const [setupFilesystemPath, setSetupFilesystemPath] = useState('/data/deek-pm/assets')
   const [setupS3Endpoint, setSetupS3Endpoint] = useState('http://rustfs:9000')
   const [setupS3Region, setSetupS3Region] = useState('us-east-1')
@@ -179,19 +182,29 @@ export function LaunchPage() {
   const selfhost = workspaces.filter((workspace) => workspace.type === 'service' && workspace.deployment === 'selfhost')
   const savedCloud = runtimeConfig.savedConnections.filter((connection) => connection.deployment === 'cloud')
   const savedSelfhost = runtimeConfig.savedConnections.filter((connection) => connection.deployment === 'selfhost')
+  const insecureServiceUrl = serviceDeployment === 'selfhost' && isInsecureRemoteServiceUrl(serviceUrl)
+  const showServiceCredentials = serviceDeployment === 'cloud' || serviceLoginRequired
 
   const connectService = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setConnectingService(true)
     setServiceMessage('')
+    setServiceMessageIsError(false)
     try {
-      const instance = await getServiceInstance(serviceUrl)
+      const instance = await getServiceInstance(serviceUrl, serviceDeployment === 'selfhost')
       if (serviceDeployment === 'selfhost' && instance.initialized === false) {
         if (!instance.setupAvailable) throw new Error('该服务尚未初始化，并且服务端未配置 SETUP_TOKEN')
         setServiceSetupRequired(true)
         setServiceMessage('检测到全新实例，请完成管理员、工作空间和文件存储初始化。')
         return
       }
+      if (serviceDeployment === 'selfhost' && !serviceLoginRequired) {
+        setServiceLoginRequired(true)
+        setServiceMessage(`已连接到 ${instance.name}，请输入已有账号登录。`)
+        return
+      }
+      if (!serviceEmail.trim() || servicePassword.length < 8) throw new Error('请输入账号邮箱和密码')
+      if (insecureServiceUrl && !allowInsecureService) throw new Error('请确认 HTTP 明文传输风险后继续')
       await runtimeConfig.connectService({
         baseUrl: serviceUrl,
         deployment: serviceDeployment,
@@ -202,6 +215,7 @@ export function LaunchPage() {
       setServicePassword('')
       setServiceDialogOpen(false)
     } catch (error) {
+      setServiceMessageIsError(true)
       setServiceMessage(error instanceof Error ? error.message : '连接服务失败')
     } finally {
       setConnectingService(false)
@@ -212,8 +226,10 @@ export function LaunchPage() {
     event.preventDefault()
     setConnectingService(true)
     setServiceMessage('')
+    setServiceMessageIsError(false)
     try {
       if (servicePassword !== setupPasswordConfirm) throw new Error('两次输入的管理员密码不一致')
+      if (insecureServiceUrl && !allowInsecureService) throw new Error('请确认 HTTP 明文传输风险后继续')
       const storage = setupStorageDriver === 'filesystem'
         ? { driver: 'filesystem' as const, filesystemPath: setupFilesystemPath.trim() }
         : {
@@ -232,7 +248,7 @@ export function LaunchPage() {
         name: setupName,
         workspaceName: setupWorkspaceName,
         storage,
-      })
+      }, serviceDeployment === 'selfhost')
       await runtimeConfig.connectService({ baseUrl: serviceUrl, deployment: 'selfhost', email: serviceEmail, password: servicePassword })
       queryClient.clear()
       setServiceSetupRequired(false)
@@ -242,6 +258,7 @@ export function LaunchPage() {
       setSetupS3SecretKey('')
       setServiceDialogOpen(false)
     } catch (error) {
+      setServiceMessageIsError(true)
       setServiceMessage(error instanceof Error ? error.message : '服务初始化失败')
     } finally {
       setConnectingService(false)
@@ -507,7 +524,10 @@ export function LaunchPage() {
         setServiceDialogOpen(open)
         if (!open) {
           setServiceSetupRequired(false)
+          setServiceLoginRequired(false)
+          setAllowInsecureService(false)
           setServiceMessage('')
+          setServiceMessageIsError(false)
         }
       }}>
         <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
@@ -552,13 +572,19 @@ export function LaunchPage() {
                     <TextInput label="Secret Key" type="password" value={setupS3SecretKey} onChange={(event) => setSetupS3SecretKey(event.target.value)} />
                   </>
                 )}
+                {insecureServiceUrl && (
+                  <label className="md:col-span-2 flex cursor-pointer items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-300">
+                    <input className="mt-0.5 size-4" type="checkbox" checked={allowInsecureService} onChange={(event) => setAllowInsecureService(event.target.checked)} />
+                    <span>当前地址使用 HTTP，初始化令牌和管理员密码会以明文传输。我确认这是临时测试环境，并接受风险。</span>
+                  </label>
+                )}
                 {serviceMessage && <div className="md:col-span-2 rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">{serviceMessage}</div>}
               </div>
               <DialogFooter className="mt-6">
-                <Button type="button" variant="outline" onClick={() => { setServiceSetupRequired(false); setServiceMessage('') }}>返回登录</Button>
+                <Button type="button" variant="outline" onClick={() => { setServiceSetupRequired(false); setServiceMessage(''); setServiceMessageIsError(false) }}>修改服务地址</Button>
                 <Button
                   type="submit"
-                  disabled={connectingService || setupToken.length < 32 || !setupName.trim() || !setupWorkspaceName.trim() || !serviceEmail || servicePassword.length < 8 || servicePassword !== setupPasswordConfirm || (setupStorageDriver === 'filesystem' ? !setupFilesystemPath.trim() : !setupS3Endpoint.trim() || !setupS3Bucket.trim() || !setupS3AccessKey.trim() || !setupS3SecretKey)}
+                  disabled={connectingService || (insecureServiceUrl && !allowInsecureService) || setupToken.length < 32 || !setupName.trim() || !setupWorkspaceName.trim() || !serviceEmail || servicePassword.length < 8 || servicePassword !== setupPasswordConfirm || (setupStorageDriver === 'filesystem' ? !setupFilesystemPath.trim() : !setupS3Endpoint.trim() || !setupS3Bucket.trim() || !setupS3AccessKey.trim() || !setupS3SecretKey)}
                 >
                   {connectingService ? '正在测试存储并初始化…' : '完成初始化并登录'}
                 </Button>
@@ -579,6 +605,10 @@ export function LaunchPage() {
                       const deployment = value as 'cloud' | 'selfhost'
                       setServiceDeployment(deployment)
                       setServiceSetupRequired(false)
+                      setServiceLoginRequired(false)
+                      setAllowInsecureService(false)
+                      setServiceMessage('')
+                      setServiceMessageIsError(false)
                       if (deployment === 'cloud') setServiceUrl(officialServiceUrl)
                     }}
                   >
@@ -589,15 +619,35 @@ export function LaunchPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                <TextInput label="服务地址" value={serviceUrl} onChange={(event) => setServiceUrl(event.target.value)} placeholder="https://pm.example.com" />
-                <TextInput label="账号邮箱" type="email" value={serviceEmail} onChange={(event) => setServiceEmail(event.target.value)} />
-                <TextInput label="密码" type="password" value={servicePassword} onChange={(event) => setServicePassword(event.target.value)} />
-                {serviceMessage && <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{serviceMessage}</div>}
+                <TextInput label="服务地址" value={serviceUrl} onChange={(event) => {
+                  setServiceUrl(event.target.value)
+                  setServiceLoginRequired(false)
+                  setAllowInsecureService(false)
+                  setServiceMessage('')
+                  setServiceMessageIsError(false)
+                }} placeholder="https://pm.example.com" />
+                {showServiceCredentials && (
+                  <>
+                    <TextInput label="账号邮箱" type="email" value={serviceEmail} onChange={(event) => setServiceEmail(event.target.value)} />
+                    <TextInput label="密码" type="password" value={servicePassword} onChange={(event) => setServicePassword(event.target.value)} />
+                  </>
+                )}
+                {showServiceCredentials && insecureServiceUrl && (
+                  <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-300">
+                    <input className="mt-0.5 size-4" type="checkbox" checked={allowInsecureService} onChange={(event) => setAllowInsecureService(event.target.checked)} />
+                    <span>当前地址使用 HTTP，账号和密码会以明文传输。我确认这是临时测试环境，并接受风险。</span>
+                  </label>
+                )}
+                {serviceMessage && (
+                  <div className={cn('rounded-lg border p-3 text-sm', serviceMessageIsError ? 'border-destructive/30 bg-destructive/5 text-destructive' : 'border-primary/20 bg-primary/5 text-foreground')}>
+                    {serviceMessage}
+                  </div>
+                )}
               </div>
               <DialogFooter className="mt-6">
                 <DialogClose asChild><Button type="button" variant="outline">取消</Button></DialogClose>
-                <Button type="submit" disabled={connectingService || !serviceUrl || !serviceEmail || servicePassword.length < 8}>
-                  {connectingService ? '正在检测并连接…' : '检测并登录'}
+                <Button type="submit" disabled={connectingService || !serviceUrl || (showServiceCredentials && (!serviceEmail || servicePassword.length < 8 || (insecureServiceUrl && !allowInsecureService)))}>
+                  {connectingService ? '正在处理…' : serviceDeployment === 'selfhost' && !serviceLoginRequired ? '检测服务' : '登录'}
                 </Button>
               </DialogFooter>
             </form>

@@ -49,17 +49,26 @@ export interface ServiceSetupInput {
   storage: ServiceSetupStorageInput
 }
 
-export function normalizeServiceUrl(value: string) {
+export function isInsecureRemoteServiceUrl(value: string) {
+  try {
+    const url = new URL(value.trim())
+    const localHost = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+    return url.protocol === 'http:' && !localHost
+  } catch {
+    return false
+  }
+}
+
+export function normalizeServiceUrl(value: string, allowInsecureRemote = false) {
   const url = new URL(value.trim())
   if (!['http:', 'https:'].includes(url.protocol)) throw new Error('服务地址只支持 HTTP 或 HTTPS')
   if (url.username || url.password) throw new Error('服务地址不能包含用户名或密码')
-  const localHost = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
-  if (url.protocol === 'http:' && !localHost) throw new Error('非本机服务必须使用 HTTPS')
+  if (isInsecureRemoteServiceUrl(url.toString()) && !allowInsecureRemote) throw new Error('非本机服务必须使用 HTTPS')
   return url.toString().replace(/\/$/, '')
 }
 
-async function publicRequest<T>(baseUrl: string, path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${normalizeServiceUrl(baseUrl)}${path}`, {
+async function publicRequest<T>(baseUrl: string, path: string, init?: RequestInit, allowInsecureRemote = false): Promise<T> {
+  const response = await fetch(`${normalizeServiceUrl(baseUrl, allowInsecureRemote)}${path}`, {
     ...init,
     signal: init?.signal ?? AbortSignal.timeout(15_000),
     headers: { 'Content-Type': 'application/json', ...init?.headers },
@@ -71,33 +80,33 @@ async function publicRequest<T>(baseUrl: string, path: string, init?: RequestIni
   return response.json() as Promise<T>
 }
 
-export function getServiceInstance(baseUrl: string) {
-  return publicRequest<ServiceInstance>(baseUrl, '/api/v1/instance')
+export function getServiceInstance(baseUrl: string, allowInsecureRemote = false) {
+  return publicRequest<ServiceInstance>(baseUrl, '/api/v1/instance', undefined, allowInsecureRemote)
 }
 
-export function loginToService(baseUrl: string, email: string, password: string) {
+export function loginToService(baseUrl: string, email: string, password: string, allowInsecureRemote = false) {
   return publicRequest<ServiceLoginResult>(baseUrl, '/api/v1/auth/login', {
     method: 'POST',
     body: JSON.stringify({ email, password }),
-  })
+  }, allowInsecureRemote)
 }
 
-export function setupService(baseUrl: string, input: ServiceSetupInput) {
+export function setupService(baseUrl: string, input: ServiceSetupInput, allowInsecureRemote = false) {
   return publicRequest<ServiceLoginResult & { workspaceId: string }>(baseUrl, '/api/v1/setup', {
     method: 'POST',
     body: JSON.stringify(input),
     signal: AbortSignal.timeout(60_000),
-  })
+  }, allowInsecureRemote)
 }
 
-export function validateServiceAccessToken(baseUrl: string, accessToken: string) {
+export function validateServiceAccessToken(baseUrl: string, accessToken: string, allowInsecureRemote = false) {
   return publicRequest<{ id: string; email: string; name: string }>(baseUrl, '/api/v1/auth/me', {
     headers: { Authorization: `Bearer ${accessToken}` },
-  })
+  }, allowInsecureRemote)
 }
 
 export function createServerRepositories(options: ServerRepositoryOptions): Repositories {
-  const baseUrl = normalizeServiceUrl(options.baseUrl)
+  const baseUrl = normalizeServiceUrl(options.baseUrl, options.deployment === 'selfhost')
   const source: RepositorySource = {
     kind: 'server',
     label: options.deployment === 'cloud' ? '官方云服务' : '自部署服务',

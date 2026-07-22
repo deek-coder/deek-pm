@@ -52,7 +52,7 @@ async function readRuntimeConfig(): Promise<RuntimeConfig> {
     if (!accessToken) return defaultConfig
     return {
       kind: 'server',
-      baseUrl: normalizeServiceUrl(stored.baseUrl),
+      baseUrl: normalizeServiceUrl(stored.baseUrl, stored.deployment === 'selfhost'),
       deployment: stored.deployment,
       accessToken,
       accountEmail: stored.accountEmail,
@@ -126,12 +126,13 @@ export function RuntimeConfigProvider({ children }: { children: ReactNode }) {
         ? { kind: 'local' }
         : { kind: 'server', baseUrl: config.baseUrl, deployment: config.deployment, accessToken: config.accessToken },
       connectService: async (input) => {
-        const baseUrl = normalizeServiceUrl(input.baseUrl)
-        const instance = await getServiceInstance(baseUrl)
+        const allowInsecureRemote = input.deployment === 'selfhost'
+        const baseUrl = normalizeServiceUrl(input.baseUrl, allowInsecureRemote)
+        const instance = await getServiceInstance(baseUrl, allowInsecureRemote)
         if (input.deployment === 'cloud' && instance.deployment !== 'cloud') {
           throw new Error('该地址不是官方云服务实例，请选择“自部署服务”')
         }
-        const login = await loginToService(baseUrl, input.email, input.password)
+        const login = await loginToService(baseUrl, input.email, input.password, allowInsecureRemote)
         const nextConfig: ServerRuntimeConfig = {
           kind: 'server',
           baseUrl,
@@ -169,13 +170,13 @@ export function RuntimeConfigProvider({ children }: { children: ReactNode }) {
         const accessToken = await decryptAccessToken(saved.encryptedAccessToken)
         if (!accessToken) throw new Error('登录会话无法解密，请重新输入密码')
         try {
-          await validateServiceAccessToken(saved.baseUrl, accessToken)
+          await validateServiceAccessToken(saved.baseUrl, accessToken, saved.deployment === 'selfhost')
         } catch {
           throw new Error('登录已过期，请重新输入密码')
         }
         const nextConfig: ServerRuntimeConfig = {
           kind: 'server',
-          baseUrl: normalizeServiceUrl(saved.baseUrl),
+          baseUrl: normalizeServiceUrl(saved.baseUrl, saved.deployment === 'selfhost'),
           deployment: saved.deployment,
           accessToken,
           accountEmail: saved.accountEmail,
