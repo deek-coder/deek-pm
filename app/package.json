@@ -41,6 +41,7 @@
       "node_modules/better-sqlite3-multiple-ciphers/**/*"
     ],
     "npmRebuild": false,
+    "afterPack": "scripts/after-pack.cjs",
     "win": {
       "icon": "public/deek-logo-mark.png",
       "target": [
