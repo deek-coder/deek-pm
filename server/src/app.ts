@@ -7,12 +7,14 @@ import { createPool } from './db.js'
 import { registerRoutes } from './routes.js'
 import multipart from '@fastify/multipart'
 import { StorageManager } from './storage.js'
+import { processAssetCleanupJobs } from './assetCleanup.js'
 
 export async function buildApp() {
   const config = getConfig()
   const pool = createPool()
   const app = Fastify({ logger: config.NODE_ENV !== 'test', bodyLimit: 8 * 1024 * 1024 })
   const storageManager = new StorageManager(pool, config.DATA_ENCRYPTION_KEY)
+  let cleanupTimer: NodeJS.Timeout | undefined
 
   await app.register(cors, {
     origin: config.CORS_ORIGIN === '*' ? true : config.CORS_ORIGIN.split(',').map((origin) => origin.trim()),
@@ -40,7 +42,17 @@ export async function buildApp() {
     return reply.code(statusCode).send({ error: statusCode >= 500 ? 'Internal server error' : resolvedError.message })
   })
 
-  app.addHook('onClose', async () => pool.end())
+  app.addHook('onReady', async () => {
+    void processAssetCleanupJobs(pool, storageManager).catch((error) => app.log.error(error))
+    cleanupTimer = setInterval(() => {
+      void processAssetCleanupJobs(pool, storageManager).catch((error) => app.log.error(error))
+    }, 30_000)
+    cleanupTimer.unref()
+  })
+  app.addHook('onClose', async () => {
+    if (cleanupTimer) clearInterval(cleanupTimer)
+    await pool.end()
+  })
   await registerRoutes(app, pool, config, storageManager)
   return app
 }

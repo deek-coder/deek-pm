@@ -29,6 +29,16 @@ import {
   changePasswordSchema,
 } from './schemas.js'
 import { createAssetStorage, type StorageManager, type StorageSettings } from './storage.js'
+import { processAssetCleanupJobs } from './assetCleanup.js'
+import {
+  deleteOwnerAssetReferences,
+  finalizeUploadedAsset,
+  queueUnreferencedAssets,
+  scheduleFailedAssetUploadCleanup,
+  serviceAssetIds,
+  syncAssetReferences,
+} from './assetService.js'
+import { validateEntryParent } from './hierarchyService.js'
 
 type Role = 'owner' | 'admin' | 'editor' | 'viewer'
 interface AuthUser { sub: string; email: string }
@@ -215,15 +225,6 @@ async function resolveStorageSettings(
   }
 }
 
-function serviceAssetIds(...values: unknown[]) {
-  const ids = new Set<string>()
-  const pattern = /deek-asset:\/\/service\/([0-9a-f-]{36})/gi
-  for (const value of values) {
-    for (const match of String(value ?? '').matchAll(pattern)) if (match[1]) ids.add(match[1].toLowerCase())
-  }
-  return [...ids]
-}
-
 function isSameStorageLocation(current: StorageSettings, next: StorageSettings) {
   if (current.driver !== next.driver) return false
   if (current.driver === 'filesystem' && next.driver === 'filesystem') {
@@ -233,30 +234,6 @@ function isSameStorageLocation(current: StorageSettings, next: StorageSettings) 
     return current.endpoint === next.endpoint && current.region === next.region && current.bucket === next.bucket && current.forcePathStyle === next.forcePathStyle
   }
   return false
-}
-
-async function cleanupAssetIds(pool: DatabasePool, storageManager: StorageManager, assetIds: Iterable<string>) {
-  const candidates = [...new Set(assetIds)]
-  if (candidates.length === 0) return
-  const storage = await storageManager.getStorage()
-  for (const id of candidates) {
-    const references = await pool.query<{ referenced: boolean }>(
-      `SELECT EXISTS (
-         SELECT 1 FROM project_attachments WHERE asset_id = $1
-         UNION ALL
-         SELECT 1 FROM knowledge_entries WHERE position('deek-asset://service/' || $1::text in coalesce(text_content, '')) > 0
-       ) AS referenced`,
-      [id],
-    )
-    if (references.rows[0]?.referenced) continue
-    const asset = (await pool.query<{ id: string; object_key: string }>(
-      "SELECT id, object_key FROM assets WHERE id = $1 AND status = 'ready'",
-      [id],
-    )).rows[0]
-    if (!asset) continue
-    await storage.delete(asset.object_key)
-    await pool.query("UPDATE assets SET status = 'deleted', deleted_at = now(), updated_at = now() WHERE id = $1", [asset.id])
-  }
 }
 
 export async function registerRoutes(app: FastifyInstance, pool: DatabasePool, config: AppConfig, storageManager: StorageManager) {
@@ -446,24 +423,12 @@ export async function registerRoutes(app: FastifyInstance, pool: DatabasePool, c
           await storage.put(objectKey, file.file.pipe(hashStream), mimeType)
           if (file.file.truncated) throw Object.assign(new Error('文件超过服务端允许的大小'), { statusCode: 413 })
           const sha256 = hash.digest('hex')
-          const duplicate = await pool.query(
-            `SELECT * FROM assets WHERE workspace_id = $1 AND sha256 = $2 AND status = 'ready' AND id <> $3 LIMIT 1`,
-            [workspaceId, sha256, assetId],
-          )
-          if (duplicate.rows[0]) {
-            await storage.delete(objectKey)
-            await pool.query('DELETE FROM assets WHERE id = $1', [assetId])
-            return reply.code(200).send(mapAsset(duplicate.rows[0]))
-          }
-          const result = await pool.query(
-            `UPDATE assets SET status = 'ready', size_bytes = $2, sha256 = $3, updated_at = now()
-             WHERE id = $1 RETURNING *`,
-            [assetId, sizeBytes, sha256],
-          )
-          return reply.code(201).send(mapAsset(result.rows[0]!))
+          const finalized = await finalizeUploadedAsset(pool, { assetId, workspaceId, objectKey, sha256, sizeBytes })
+          if (finalized.duplicate) void processAssetCleanupJobs(pool, storageManager).catch(() => undefined)
+          return reply.code(finalized.duplicate ? 200 : 201).send(mapAsset(finalized.asset))
         } catch (error) {
-          await storage.delete(objectKey).catch(() => undefined)
-          await pool.query('DELETE FROM assets WHERE id = $1', [assetId])
+          await scheduleFailedAssetUploadCleanup(pool, assetId).catch(() => undefined)
+          void processAssetCleanupJobs(pool, storageManager).catch(() => undefined)
           throw error
         }
       })
@@ -488,17 +453,28 @@ export async function registerRoutes(app: FastifyInstance, pool: DatabasePool, c
         const asset = result.rows[0]
         if (!asset) return reply.code(204).send()
         await requireWorkspace(app, pool, request, asset.workspace_id, 'editor')
-        const referenced = await pool.query<{ referenced: boolean }>(
-          `SELECT EXISTS (
-             SELECT 1 FROM project_attachments WHERE asset_id = $1
-             UNION ALL
-             SELECT 1 FROM knowledge_entries WHERE text_content LIKE $2
-           ) AS referenced`,
-          [id, `%deek-asset://service/${id}%`],
-        )
-        if (referenced.rows[0]?.referenced) return reply.code(204).send()
-        await (await storageManager.getStorage()).delete(asset.object_key)
-        await pool.query("UPDATE assets SET status = 'deleted', deleted_at = now(), updated_at = now() WHERE id = $1", [id])
+        const client = await pool.connect()
+        try {
+          await client.query('BEGIN')
+          const referenced = await client.query<{ referenced: boolean }>(
+            `SELECT EXISTS (
+               SELECT 1 FROM asset_references WHERE asset_id = $1
+               UNION ALL
+               SELECT 1 FROM project_attachments WHERE asset_id = $1
+               UNION ALL
+               SELECT 1 FROM knowledge_entries WHERE text_content LIKE $2
+             ) AS referenced`,
+            [id, `%deek-asset://service/${id}%`],
+          )
+          if (!referenced.rows[0]?.referenced) await queueUnreferencedAssets(client, [id])
+          await client.query('COMMIT')
+        } catch (error) {
+          await client.query('ROLLBACK')
+          throw error
+        } finally {
+          client.release()
+        }
+        void processAssetCleanupJobs(pool, storageManager).catch(() => undefined)
         return reply.code(204).send()
       })
 
@@ -572,16 +548,30 @@ export async function registerRoutes(app: FastifyInstance, pool: DatabasePool, c
         const { id } = idParamsSchema.parse(request.params)
         const workspaceId = await projectWorkspace(app, pool, id)
         await requireWorkspace(app, pool, request, workspaceId, 'editor')
-        const [entryAssets, attachmentAssets] = await Promise.all([
-          pool.query<{ text_content: string | null }>('SELECT text_content FROM knowledge_entries WHERE project_id = $1', [id]),
-          pool.query<{ asset_id: string | null }>('SELECT asset_id FROM project_attachments WHERE project_id = $1 AND asset_id IS NOT NULL', [id]),
-        ])
-        const assetIds = [
-          ...serviceAssetIds(...entryAssets.rows.map((row) => row.text_content)),
-          ...attachmentAssets.rows.flatMap((row) => row.asset_id ? [row.asset_id] : []),
-        ]
-        await pool.query('DELETE FROM projects WHERE id = $1', [id])
-        await cleanupAssetIds(pool, storageManager, assetIds)
+        const client = await pool.connect()
+        try {
+          await client.query('BEGIN')
+          const entryAssets = await client.query<{ id: string; text_content: string | null }>('SELECT id, text_content FROM knowledge_entries WHERE project_id = $1', [id])
+          const attachmentAssets = await client.query<{ id: string; asset_id: string | null }>('SELECT id, asset_id FROM project_attachments WHERE project_id = $1', [id])
+          const released = [
+            ...await deleteOwnerAssetReferences(client, 'entry', entryAssets.rows.map((row) => row.id)),
+            ...await deleteOwnerAssetReferences(client, 'attachment', attachmentAssets.rows.map((row) => row.id)),
+          ]
+          const assetIds = [
+            ...released,
+            ...serviceAssetIds(...entryAssets.rows.map((row) => row.text_content)),
+            ...attachmentAssets.rows.flatMap((row) => row.asset_id ? [row.asset_id] : []),
+          ]
+          await client.query('DELETE FROM projects WHERE id = $1', [id])
+          await queueUnreferencedAssets(client, assetIds)
+          await client.query('COMMIT')
+        } catch (error) {
+          await client.query('ROLLBACK')
+          throw error
+        } finally {
+          client.release()
+        }
+        void processAssetCleanupJobs(pool, storageManager).catch(() => undefined)
         return reply.code(204).send()
       })
 
@@ -651,18 +641,30 @@ export async function registerRoutes(app: FastifyInstance, pool: DatabasePool, c
         const { id } = idParamsSchema.parse(request.params)
         const workspaceId = await groupWorkspace(app, pool, id)
         await requireWorkspace(app, pool, request, workspaceId, 'editor')
-        const entries = await pool.query<{ text_content: string | null }>(
-          `WITH RECURSIVE descendants AS (
-             SELECT id FROM knowledge_groups WHERE id = $1
-             UNION ALL
-             SELECT g.id FROM knowledge_groups g JOIN descendants d ON g.parent_group_id = d.id
-           )
-           SELECT e.text_content FROM knowledge_entries e JOIN descendants d ON d.id = e.group_id`,
-          [id],
-        )
-        const assetIds = serviceAssetIds(...entries.rows.map((row) => row.text_content))
-        await pool.query('DELETE FROM knowledge_groups WHERE id = $1', [id])
-        await cleanupAssetIds(pool, storageManager, assetIds)
+        const client = await pool.connect()
+        try {
+          await client.query('BEGIN')
+          const entries = await client.query<{ id: string; text_content: string | null }>(
+            `WITH RECURSIVE descendants AS (
+               SELECT id FROM knowledge_groups WHERE id = $1
+               UNION ALL
+               SELECT g.id FROM knowledge_groups g JOIN descendants d ON g.parent_group_id = d.id
+             )
+             SELECT e.id, e.text_content FROM knowledge_entries e JOIN descendants d ON d.id = e.group_id`,
+            [id],
+          )
+          const released = await deleteOwnerAssetReferences(client, 'entry', entries.rows.map((row) => row.id))
+          const assetIds = [...released, ...serviceAssetIds(...entries.rows.map((row) => row.text_content))]
+          await client.query('DELETE FROM knowledge_groups WHERE id = $1', [id])
+          await queueUnreferencedAssets(client, assetIds)
+          await client.query('COMMIT')
+        } catch (error) {
+          await client.query('ROLLBACK')
+          throw error
+        } finally {
+          client.release()
+        }
+        void processAssetCleanupJobs(pool, storageManager).catch(() => undefined)
         return reply.code(204).send()
       })
 
@@ -678,14 +680,26 @@ export async function registerRoutes(app: FastifyInstance, pool: DatabasePool, c
         await requireWorkspace(app, pool, request, await projectWorkspace(app, pool, input.projectId), 'editor')
         const group = await pool.query<{ project_id: string }>('SELECT project_id FROM knowledge_groups WHERE id = $1', [input.groupId])
         if (group.rows[0]?.project_id !== input.projectId) throw app.httpErrors.forbidden('Group must belong to the same project')
-        const nextOrder = await pool.query<{ value: number }>('SELECT coalesce(max(sort_order), -1) + 1 AS value FROM knowledge_entries WHERE group_id = $1', [input.groupId])
-        const result = await pool.query(
-          `INSERT INTO knowledge_entries (id, project_id, group_id, parent_entry_id, type, title, icon, remark, sort_order)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
-          [randomUUID(), input.projectId, input.groupId, input.parentEntryId ?? null, input.type, input.title, input.icon ?? null, input.remark, nextOrder.rows[0]!.value],
-        )
-        await pool.query('UPDATE projects SET updated_at = now() WHERE id = $1', [input.projectId])
-        return reply.code(201).send(mapEntry(result.rows[0]!, config))
+        const client = await pool.connect()
+        try {
+          await client.query('BEGIN')
+          await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`entry-order:${input.groupId}`])
+          await validateEntryParent(client, input.projectId, input.groupId, input.parentEntryId)
+          const nextOrder = await client.query<{ value: number }>('SELECT coalesce(max(sort_order), -1) + 1 AS value FROM knowledge_entries WHERE group_id = $1', [input.groupId])
+          const result = await client.query(
+            `INSERT INTO knowledge_entries (id, project_id, group_id, parent_entry_id, type, title, icon, remark, sort_order)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+            [randomUUID(), input.projectId, input.groupId, input.parentEntryId ?? null, input.type, input.title, input.icon ?? null, input.remark, nextOrder.rows[0]!.value],
+          )
+          await client.query('UPDATE projects SET updated_at = now() WHERE id = $1', [input.projectId])
+          await client.query('COMMIT')
+          return reply.code(201).send(mapEntry(result.rows[0]!, config))
+        } catch (error) {
+          await client.query('ROLLBACK')
+          throw error
+        } finally {
+          client.release()
+        }
       })
 
       protectedApi.patch('/entries/:id', async (request) => {
@@ -693,46 +707,72 @@ export async function registerRoutes(app: FastifyInstance, pool: DatabasePool, c
         const workspaceId = await entryWorkspace(app, pool, id)
         await requireWorkspace(app, pool, request, workspaceId, 'editor')
         const input = updateEntrySchema.parse(request.body)
-        const current = (await pool.query('SELECT * FROM knowledge_entries WHERE id = $1', [id])).rows[0]!
-        const result = await pool.query(
-          `UPDATE knowledge_entries SET parent_entry_id = $2, title = $3, icon = $4, remark = $5,
-             tags = $6, text_content = $7, password_items_encrypted = $8, link_items = $9, updated_at = now()
-           WHERE id = $1 RETURNING *`,
-          [
-            id,
-            input.parentEntryId === undefined ? current.parent_entry_id : input.parentEntryId,
-            input.title ?? current.title,
-            input.icon === undefined ? current.icon : input.icon,
-            input.remark ?? current.remark,
-            JSON.stringify(input.tags ?? current.tags),
-            input.textContent ?? current.text_content,
-            input.passwordItems === undefined ? current.password_items_encrypted : encryptJson(input.passwordItems, config.DATA_ENCRYPTION_KEY),
-            input.linkItems === undefined ? current.link_items : JSON.stringify(input.linkItems),
-          ],
-        )
-        await pool.query('UPDATE projects SET updated_at = now() WHERE id = $1', [current.project_id])
-        if (input.textContent !== undefined) {
-          const nextIds = new Set(serviceAssetIds(input.textContent))
-          await cleanupAssetIds(pool, storageManager, serviceAssetIds(current.text_content).filter((assetId) => !nextIds.has(assetId)))
+        const client = await pool.connect()
+        try {
+          await client.query('BEGIN')
+          const current = (await client.query('SELECT * FROM knowledge_entries WHERE id = $1 FOR UPDATE', [id])).rows[0]!
+          const nextTextContent = input.textContent ?? current.text_content
+          const nextParentEntryId = input.parentEntryId === undefined ? current.parent_entry_id : input.parentEntryId
+          await validateEntryParent(client, current.project_id, current.group_id, nextParentEntryId, id)
+          const result = await client.query(
+            `UPDATE knowledge_entries SET parent_entry_id = $2, title = $3, icon = $4, remark = $5,
+               tags = $6, text_content = $7, password_items_encrypted = $8, link_items = $9, updated_at = now()
+             WHERE id = $1 RETURNING *`,
+            [
+              id,
+              nextParentEntryId,
+              input.title ?? current.title,
+              input.icon === undefined ? current.icon : input.icon,
+              input.remark ?? current.remark,
+              JSON.stringify(input.tags ?? current.tags),
+              nextTextContent,
+              input.passwordItems === undefined ? current.password_items_encrypted : encryptJson(input.passwordItems, config.DATA_ENCRYPTION_KEY),
+              input.linkItems === undefined ? current.link_items : JSON.stringify(input.linkItems),
+            ],
+          )
+          await client.query('UPDATE projects SET updated_at = now() WHERE id = $1', [current.project_id])
+          const previousIds = serviceAssetIds(current.text_content)
+          const nextIds = serviceAssetIds(nextTextContent)
+          await syncAssetReferences(client, workspaceId, 'entry', id, nextIds)
+          await queueUnreferencedAssets(client, previousIds.filter((assetId) => !nextIds.includes(assetId)))
+          await client.query('COMMIT')
+          void processAssetCleanupJobs(pool, storageManager).catch(() => undefined)
+          return mapEntry(result.rows[0]!, config)
+        } catch (error) {
+          await client.query('ROLLBACK')
+          throw error
+        } finally {
+          client.release()
         }
-        return mapEntry(result.rows[0]!, config)
       })
 
       protectedApi.delete('/entries/:id', async (request, reply) => {
         const { id } = idParamsSchema.parse(request.params)
         const workspaceId = await entryWorkspace(app, pool, id)
         await requireWorkspace(app, pool, request, workspaceId, 'editor')
-        const entries = await pool.query<{ text_content: string | null }>(
-          `WITH RECURSIVE descendants AS (
-             SELECT id, text_content FROM knowledge_entries WHERE id = $1
-             UNION ALL
-             SELECT e.id, e.text_content FROM knowledge_entries e JOIN descendants d ON e.parent_entry_id = d.id
-           ) SELECT text_content FROM descendants`,
-          [id],
-        )
-        const assetIds = serviceAssetIds(...entries.rows.map((row) => row.text_content))
-        await pool.query('DELETE FROM knowledge_entries WHERE id = $1', [id])
-        await cleanupAssetIds(pool, storageManager, assetIds)
+        const client = await pool.connect()
+        try {
+          await client.query('BEGIN')
+          const entries = await client.query<{ id: string; text_content: string | null }>(
+            `WITH RECURSIVE descendants AS (
+               SELECT id, text_content FROM knowledge_entries WHERE id = $1
+               UNION ALL
+               SELECT e.id, e.text_content FROM knowledge_entries e JOIN descendants d ON e.parent_entry_id = d.id
+             ) SELECT id, text_content FROM descendants`,
+            [id],
+          )
+          const released = await deleteOwnerAssetReferences(client, 'entry', entries.rows.map((row) => row.id))
+          const assetIds = [...released, ...serviceAssetIds(...entries.rows.map((row) => row.text_content))]
+          await client.query('DELETE FROM knowledge_entries WHERE id = $1', [id])
+          await queueUnreferencedAssets(client, assetIds)
+          await client.query('COMMIT')
+        } catch (error) {
+          await client.query('ROLLBACK')
+          throw error
+        } finally {
+          client.release()
+        }
+        void processAssetCleanupJobs(pool, storageManager).catch(() => undefined)
         return reply.code(204).send()
       })
 
@@ -796,12 +836,24 @@ export async function registerRoutes(app: FastifyInstance, pool: DatabasePool, c
           const asset = await pool.query<{ workspace_id: string }>('SELECT workspace_id FROM assets WHERE id = $1 AND status = \'ready\'', [input.assetId])
           if (asset.rows[0]?.workspace_id !== workspaceId) throw app.httpErrors.forbidden('附件资产不属于当前资料库')
         }
-        const result = await pool.query(
-          `INSERT INTO project_attachments (id, project_id, name, target_type, target, asset_id)
-           VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-          [randomUUID(), input.projectId, input.name, input.targetType, input.target, input.assetId ?? null],
-        )
-        return reply.code(201).send(mapAttachment(result.rows[0]!))
+        const attachmentId = randomUUID()
+        const client = await pool.connect()
+        try {
+          await client.query('BEGIN')
+          const result = await client.query(
+            `INSERT INTO project_attachments (id, project_id, name, target_type, target, asset_id)
+             VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+            [attachmentId, input.projectId, input.name, input.targetType, input.target, input.assetId ?? null],
+          )
+          await syncAssetReferences(client, workspaceId, 'attachment', attachmentId, input.assetId ? [input.assetId] : [])
+          await client.query('COMMIT')
+          return reply.code(201).send(mapAttachment(result.rows[0]!))
+        } catch (error) {
+          await client.query('ROLLBACK')
+          throw error
+        } finally {
+          client.release()
+        }
       })
 
       protectedApi.delete('/attachments/:id', async (request, reply) => {
@@ -810,8 +862,20 @@ export async function registerRoutes(app: FastifyInstance, pool: DatabasePool, c
         if (!item.rows[0]) throw app.httpErrors.notFound('Attachment not found')
         const workspaceId = await projectWorkspace(app, pool, item.rows[0].project_id)
         await requireWorkspace(app, pool, request, workspaceId, 'editor')
-        await pool.query('DELETE FROM project_attachments WHERE id = $1', [id])
-        await cleanupAssetIds(pool, storageManager, item.rows[0].asset_id ? [item.rows[0].asset_id] : [])
+        const client = await pool.connect()
+        try {
+          await client.query('BEGIN')
+          const released = await deleteOwnerAssetReferences(client, 'attachment', [id])
+          await client.query('DELETE FROM project_attachments WHERE id = $1', [id])
+          await queueUnreferencedAssets(client, [...released, ...(item.rows[0].asset_id ? [item.rows[0].asset_id] : [])])
+          await client.query('COMMIT')
+        } catch (error) {
+          await client.query('ROLLBACK')
+          throw error
+        } finally {
+          client.release()
+        }
+        void processAssetCleanupJobs(pool, storageManager).catch(() => undefined)
         return reply.code(204).send()
       })
 

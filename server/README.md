@@ -9,13 +9,15 @@ Deek PM 的官方云服务和自部署服务共用这一套 API。两种部署�
 - 项目、智库分组与条目、附件索引、快捷入口 API
 - PostgreSQL 持久化和版本化迁移
 - 密码类条目使用 AES-256-GCM 应用层加密后入库
+- 正文图片和托管附件统一使用 Asset、AssetReference 和稳定资产 URL
+- 文件系统与 S3 共用资产状态机；物理删除由可重试清理任务异步执行
 - 健康检查、Docker 镜像和 Docker Compose 自部署
 
 本目录暂不包含后台管理页面。实例级用户、审计、套餐等管理功能留给后续后台；项目不提供成员邀请或多人协作接口。
 
 ## 本地启动
 
-要求 Node.js 20+ 和 PostgreSQL 14+。
+要求 Node.js 22.12+ 和 PostgreSQL 14+。Docker 镜像已经使用 Node 22；主服务继续采用 Node.js + TypeScript，因为当前负载以 HTTP、PostgreSQL 和文件系统/S3 流式 I/O 为主。
 
 当前开发方式是：API 服务运行在本机 `127.0.0.1:3100`，PostgreSQL 可以是本机数据库，也可以通过 `DATABASE_URL` 连接远程数据库。数据库地址不等于 API 服务地址。
 
@@ -48,6 +50,8 @@ curl http://127.0.0.1:3100/api/v1/instance
 ```
 
 自部署实例登录后，可在客户端“设置 → 服务端物理存储”中选择服务器目录，或填写 RustFS/S3 的 Endpoint、Bucket 和密钥。完整配置保存在 PostgreSQL 的 `storage_settings` 表；S3 Access Key/Secret Key 使用 `DATA_ENCRYPTION_KEY` 加密后入库，不写入客户端配置文件。
+
+资产上传以工作空间 + SHA-256 去重。并发上传通过 PostgreSQL advisory transaction lock 和部分唯一索引串行化；删除项目、条目或附件时，释放引用与创建 `asset_cleanup_jobs` 在同一数据库事务完成。文件系统/S3 暂时不可用不会把已经成功的业务删除返回为失败，后台 worker 会按退避时间重试，并回收超时的 `pending` 上传。
 
 `.env` 只保留数据库连接、JWT 签名密钥、数据加密主密钥等服务启动前必须存在的引导参数。数据库中的加密主密钥不能再存回同一个数据库，否则无法建立可信的解密边界。
 
