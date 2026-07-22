@@ -107,6 +107,31 @@
     180ms;
   --motion-smooth:
     260ms;
+  /*
+   * Type scale for Chinese desktop (Win/Electron).
+   * Real macOS 13pt SF Pro looks larger on Retina; YaHei at the same rem
+   * reads smaller, so we keep UI body at 15–16px for comfort.
+   */
+  --text-caption: 0.8125rem;   /* 13 */
+  --text-callout: 0.875rem;    /* 14 */
+  --text-body: 0.9375rem;      /* 15 */
+  --text-title3: 1rem;         /* 16 */
+  --text-title2: 1.125rem;     /* 18 */
+  --text-title1: 1.5rem;       /* 24 */
+  --text-large-title: 2rem;    /* 32 */
+  --control-h: 2.125rem;       /* 34 */
+  --dialog-max-w: 32rem;
+  --dialog-pad: 1.5rem;
+  --card-px: 1.15rem;
+  --card-py: 1.15rem;
+  --card-gap: 1rem;
+  --badge-default-bg: oklch(0.93 0.03 255 / 90%);
+  --badge-default-fg: oklch(0.32 0.05 255);
+  --badge-secondary-bg: oklch(0.94 0.01 255 / 90%);
+  --badge-secondary-fg: oklch(0.4 0.02 255);
+  --badge-tag-bg: oklch(0.96 0.01 255 / 95%);
+  --badge-tag-fg: oklch(0.38 0.03 255);
+  --badge-tag-border: oklch(0.82 0.02 255 / 55%);
   --button-bg:
     oklch(1 0.004 255 / 70%);
   --button-hover-bg:
@@ -115,6 +140,12 @@
     oklch(1 0 0 / 58%);
   --button-primary-bg:
     linear-gradient(180deg, oklch(1 0.004 255 / 86%), oklch(0.91 0.018 250 / 72%));
+  --button-primary-fg:
+    oklch(0.2 0.03 255);
+  --button-primary-hover-brightness:
+    1.05;
+  --theme-accent:
+    oklch(0.48 0.08 255);
   --nav-item-bg:
     transparent;
   --nav-item-hover-bg:
@@ -123,6 +154,54 @@
     oklch(1 0.004 255 / 76%);
   --nav-item-active-fg:
     oklch(0.2 0.04 255);
+  --font-ui:
+    Inter, "Microsoft YaHei", "PingFang SC", "Segoe UI", Arial, sans-serif;
+  /* Sidebar width scales with window (HIG: sidebar needs real room) */
+  --shell-sidebar-width: clamp(15.5rem, 18vw, 18.5rem);
+  --shell-titlebar-h: 3.25rem;
+  --page-pad-x: clamp(1.35rem, 2.4vw, 2.5rem);
+  --page-pad-y: clamp(1.25rem, 2vw, 2rem);
+  --page-max-w: min(92rem, 100%);
+  --page-gap: 1.25rem;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  /* Match original Notes-like proportions: rail ~84px, tree ~360px, editor full remainder */
+  --knowledge-rail-w: 5.5rem;
+  --knowledge-tree-w: clamp(20rem, 26vw, 24rem);
+  --content-bg: transparent;
+  --titlebar-content-pad-left:
+    0px;
+  --titlebar-content-pad-right:
+    8.5rem;
+  --tone-blue-dot: oklch(0.62 0.14 240);
+  --tone-blue-panel: oklch(0.96 0.03 240);
+  --tone-blue-fg: oklch(0.42 0.12 240);
+  --tone-blue-ring: oklch(0.9 0.04 240);
+  --tone-blue-icon: oklch(0.5 0.14 240);
+  --tone-blue-line: oklch(0.62 0.14 240);
+  --tone-green-dot: oklch(0.62 0.14 155);
+  --tone-green-panel: oklch(0.96 0.03 155);
+  --tone-green-fg: oklch(0.4 0.1 155);
+  --tone-green-ring: oklch(0.9 0.04 155);
+  --tone-green-icon: oklch(0.48 0.12 155);
+  --tone-green-line: oklch(0.62 0.14 155);
+  --tone-violet-dot: oklch(0.58 0.14 300);
+  --tone-violet-panel: oklch(0.96 0.03 300);
+  --tone-violet-fg: oklch(0.42 0.12 300);
+  --tone-violet-ring: oklch(0.9 0.04 300);
+  --tone-violet-icon: oklch(0.5 0.14 300);
+  --tone-violet-line: oklch(0.58 0.14 300);
+  --tone-slate-dot: oklch(0.55 0.02 255);
+  --tone-slate-panel: oklch(0.95 0.01 255);
+  --tone-slate-fg: oklch(0.38 0.02 255);
+  --tone-slate-ring: oklch(0.9 0.01 255);
+  --tone-slate-icon: oklch(0.45 0.02 255);
+  --tone-slate-line: oklch(0.55 0.02 255);
   --card-bg:
     var(--surface-elevated);
   --card-border:
@@ -131,8 +210,7 @@
     oklch(1 0.004 255 / 54%);
   --input-border:
     oklch(1 0 0 / 62%);
-  font-family:
-    Inter, "Microsoft YaHei", "PingFang SC", "Segoe UI", Arial, sans-serif;
+  font-family: var(--font-ui);
   color: var(--foreground);
   background: var(--background);
   font-synthesis: none;
@@ -200,17 +278,17 @@ button:disabled {
 }
 
 .deek-page-title-input {
-  font-size: 2.625rem;
-  font-weight: 680;
-  line-height: 1.14;
-  letter-spacing: 0;
+  font-size: 2.5rem;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
 }
 
 .deek-page-subtitle-input {
-  font-size: 1.25rem;
-  font-weight: 560;
+  font-size: 1.2rem;
+  font-weight: 500;
   line-height: 1.45;
-  letter-spacing: 0;
+  letter-spacing: -0.015em;
 }
 
 .deek-blocknote-editor {
@@ -331,6 +409,922 @@ button:disabled {
   color: var(--nav-item-active-fg);
   box-shadow: var(--glass-highlight), var(--shadow-control);
 }
+
+/* Explicit alias: current default theme id */
+:root,
+html[data-theme='glass'] {
+  color-scheme: light;
+}
+
+/*
+ * macOS System theme
+ * Inspired by recent macOS system UI (Sequoia / Liquid Glass direction):
+ * SF-like font stack, system blue CTAs, translucent materials, pill sidebar selection.
+ */
+html[data-theme='macos'] {
+  color-scheme: light;
+  --background: oklch(0.965 0.005 250);
+  --foreground: oklch(0.22 0.02 255);
+  --card: oklch(0.995 0.002 250 / 78%);
+  --card-foreground: oklch(0.22 0.02 255);
+  --muted: oklch(0.94 0.008 250 / 78%);
+  --muted-foreground: oklch(0.45 0.02 255);
+  --border: oklch(0.78 0.012 250 / 34%);
+  --input: oklch(0.82 0.01 250 / 42%);
+  --primary: oklch(0.58 0.19 250);
+  --primary-foreground: oklch(0.99 0.005 250);
+  --accent: oklch(0.94 0.02 250 / 80%);
+  --accent-foreground: oklch(0.24 0.04 255);
+  --destructive: oklch(0.58 0.22 25);
+  --ring: oklch(0.58 0.19 250 / 45%);
+  --radius: 0.8rem;
+
+  --surface: oklch(0.99 0.003 250 / 82%);
+  --surface-muted: oklch(0.95 0.008 250 / 72%);
+  --surface-elevated: oklch(0.998 0.002 250 / 90%);
+  --surface-glass: oklch(0.995 0.003 250 / 70%);
+  --surface-glass-strong: oklch(0.998 0.002 250 / 84%);
+  --border-strong: oklch(0.7 0.02 250 / 36%);
+
+  /* Soft multi-stop wash like a mac wallpaper wash behind materials */
+  --app-bg:
+    radial-gradient(120% 80% at 12% 0%, oklch(0.93 0.03 230 / 55%), transparent 55%),
+    radial-gradient(90% 70% at 88% 8%, oklch(0.92 0.035 300 / 40%), transparent 52%),
+    radial-gradient(70% 55% at 50% 100%, oklch(0.94 0.02 200 / 35%), transparent 50%),
+    linear-gradient(180deg, oklch(0.975 0.006 250), oklch(0.94 0.01 250));
+
+  --topbar-bg: oklch(0.99 0.004 250 / 62%);
+  --topbar-border: oklch(1 0 0 / 48%);
+  --sidebar-bg:
+    linear-gradient(180deg, oklch(0.99 0.004 250 / 58%), oklch(0.955 0.01 250 / 42%));
+  --sidebar-border: oklch(0.75 0.015 250 / 18%);
+  --panel-bg: oklch(0.995 0.003 250 / 66%);
+  --panel-border: oklch(1 0 0 / 42%);
+  --toolbar-bg: oklch(0.995 0.003 250 / 70%);
+  --popover-bg: oklch(0.995 0.003 250 / 86%);
+  --dialog-bg: oklch(0.995 0.003 250 / 90%);
+
+  --glass-bg: oklch(1 0.003 250 / 52%);
+  --glass-bg-strong: oklch(1 0.003 250 / 72%);
+  --glass-border: oklch(1 0 0 / 48%);
+  --glass-highlight: inset 0 0.5px 0 oklch(1 0 0 / 82%);
+  --glass-shadow:
+    0 10px 40px oklch(0.35 0.04 255 / 10%),
+    0 1px 0 oklch(1 0 0 / 70%) inset;
+  --glass-shadow-soft:
+    0 4px 18px oklch(0.35 0.04 255 / 8%),
+    0 0.5px 0 oklch(1 0 0 / 70%) inset;
+  --glass-blur: 28px;
+  --glass-saturate: 1.45;
+
+  --radius-control: 0.55rem;
+  --radius-panel: 0.85rem;
+  --radius-card: 0.85rem;
+  --radius-dialog: 1.05rem;
+
+  --shadow-control: 0 0.5px 0.5px oklch(0.3 0.03 255 / 8%);
+  --shadow-panel: 0 8px 28px oklch(0.3 0.03 255 / 8%);
+  --shadow-popover: 0 18px 48px oklch(0.28 0.04 255 / 16%);
+  --shadow-window: 0 24px 64px oklch(0.28 0.04 255 / 16%);
+
+  --motion-fast: 140ms;
+  --motion-normal: 200ms;
+  --motion-smooth: 280ms;
+
+  --button-bg: oklch(1 0.003 250 / 55%);
+  --button-hover-bg: oklch(1 0.003 250 / 72%);
+  --button-border: oklch(0.7 0.02 250 / 22%);
+  /* System Blue filled CTA */
+  --button-primary-bg:
+    linear-gradient(180deg, oklch(0.64 0.17 250), oklch(0.54 0.2 250));
+  --button-primary-fg: oklch(0.99 0.005 250);
+  --button-primary-hover-brightness: 1.04;
+  --theme-accent: oklch(0.58 0.19 250);
+
+  --nav-item-bg: transparent;
+  --nav-item-hover-bg: oklch(0.45 0.02 255 / 8%);
+  --nav-item-active-bg: oklch(0.45 0.02 255 / 12%);
+  --nav-item-active-fg: oklch(0.18 0.03 255);
+
+  --card-bg: var(--surface-elevated);
+  --card-border: oklch(0.75 0.015 250 / 18%);
+  --input-bg: oklch(1 0.002 250 / 62%);
+  --input-border: oklch(0.72 0.015 250 / 28%);
+
+  --popover: var(--popover-bg);
+  --popover-foreground: oklch(0.22 0.02 255);
+  --secondary: oklch(0.94 0.008 250 / 80%);
+  --secondary-foreground: oklch(0.24 0.02 255);
+
+  --sidebar: oklch(0.99 0.004 250 / 58%);
+  --sidebar-foreground: oklch(0.22 0.02 255);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--nav-item-active-bg);
+  --sidebar-accent-foreground: var(--nav-item-active-fg);
+  --sidebar-border: oklch(0.75 0.015 250 / 18%);
+  --sidebar-ring: var(--ring);
+
+  --font-ui:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+    "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+    "Helvetica Neue", Arial, sans-serif;
+  /* medium→large sidebar feel when maximized */
+  --shell-sidebar-width: clamp(17rem, 17.5vw, 20rem);
+  --shell-titlebar-h: 3.4rem;
+  --page-pad-x: clamp(1.6rem, 3vw, 3rem);
+  --page-pad-y: clamp(1.35rem, 2.2vw, 2.25rem);
+  --page-max-w: min(94rem, 100%);
+  --page-gap: 1.35rem;
+  --knowledge-rail-w: 5.75rem;
+  --knowledge-tree-w: clamp(21rem, 26vw, 25rem);
+  --content-bg: oklch(0.975 0.005 250 / 62%);
+  --text-caption: 0.8125rem;
+  --text-callout: 0.875rem;
+  --text-body: 0.9375rem;
+  --text-title3: 1.0625rem;
+  --text-title2: 1.1875rem;
+  --text-title1: 1.625rem;
+  --text-large-title: 2.125rem;
+  --control-h: 2.125rem;
+  --dialog-max-w: 34rem;
+  --dialog-pad: 1.6rem;
+  --card-px: 1.2rem;
+  --card-py: 1.2rem;
+  --card-gap: 1rem;
+  --radius: 0.8rem;
+  --radius-control: 0.55rem;
+  --radius-panel: 0.8rem;
+  --radius-card: 0.85rem;
+  --radius-dialog: 1rem;
+  --badge-default-bg: oklch(0.58 0.19 250 / 12%);
+  --badge-default-fg: oklch(0.42 0.16 250);
+  --badge-secondary-bg: oklch(0.5 0.02 255 / 8%);
+  --badge-secondary-fg: oklch(0.4 0.02 255);
+  --badge-tag-bg: oklch(0.5 0.02 255 / 6%);
+  --badge-tag-fg: oklch(0.38 0.02 255);
+  --badge-tag-border: transparent;
+  font-family: var(--font-ui);
+  letter-spacing: -0.01em;
+}
+
+/* App icons — glass default */
+.deek-app-icon {
+  border-radius: 0.65rem;
+  color: white;
+  box-shadow: var(--shadow-control);
+}
+.deek-app-icon-local {
+  background: linear-gradient(180deg, oklch(0.32 0.03 255), oklch(0.18 0.02 255));
+}
+.deek-app-icon-cloud {
+  background: linear-gradient(180deg, oklch(0.42 0.04 255), oklch(0.28 0.03 255));
+}
+.deek-app-icon-selfhost {
+  background: linear-gradient(180deg, oklch(0.38 0.03 255), oklch(0.24 0.02 255));
+}
+.deek-app-icon-neutral {
+  background: linear-gradient(180deg, oklch(0.55 0.02 255), oklch(0.4 0.02 255));
+}
+
+html[data-theme='macos'] {
+  --titlebar-content-pad-left: 5.25rem;
+  --titlebar-content-pad-right: 1rem;
+  --tone-blue-dot: oklch(0.58 0.17 245);
+  --tone-blue-panel: oklch(0.95 0.03 245 / 85%);
+  --tone-blue-fg: oklch(0.38 0.12 245);
+  --tone-blue-ring: oklch(0.88 0.04 245 / 70%);
+  --tone-blue-icon: oklch(0.48 0.16 245);
+  --tone-blue-line: oklch(0.58 0.17 245);
+  --tone-green-dot: oklch(0.58 0.14 150);
+  --tone-green-panel: oklch(0.95 0.03 150 / 85%);
+  --tone-green-fg: oklch(0.36 0.1 150);
+  --tone-green-ring: oklch(0.88 0.04 150 / 70%);
+  --tone-green-icon: oklch(0.45 0.12 150);
+  --tone-green-line: oklch(0.58 0.14 150);
+  --tone-violet-dot: oklch(0.55 0.16 305);
+  --tone-violet-panel: oklch(0.95 0.03 305 / 85%);
+  --tone-violet-fg: oklch(0.38 0.12 305);
+  --tone-violet-ring: oklch(0.88 0.04 305 / 70%);
+  --tone-violet-icon: oklch(0.48 0.14 305);
+  --tone-violet-line: oklch(0.55 0.16 305);
+  --tone-slate-dot: oklch(0.55 0.02 255);
+  --tone-slate-panel: oklch(0.95 0.008 255 / 88%);
+  --tone-slate-fg: oklch(0.34 0.02 255);
+  --tone-slate-ring: oklch(0.88 0.01 255 / 70%);
+  --tone-slate-icon: oklch(0.42 0.02 255);
+  --tone-slate-line: oklch(0.55 0.02 255);
+}
+
+/* macOS: app icons as continuous squircles */
+html[data-theme='macos'] .deek-app-icon {
+  border-radius: 22%;
+  box-shadow:
+    0 1px 2px oklch(0.3 0.03 255 / 16%),
+    inset 0 0.5px 0 oklch(1 0 0 / 35%);
+}
+html[data-theme='macos'] .deek-app-icon-local {
+  background: linear-gradient(160deg, oklch(0.62 0.08 250), oklch(0.42 0.12 255));
+}
+html[data-theme='macos'] .deek-app-icon-cloud {
+  background: linear-gradient(160deg, oklch(0.68 0.14 230), oklch(0.5 0.18 250));
+}
+html[data-theme='macos'] .deek-app-icon-selfhost {
+  background: linear-gradient(160deg, oklch(0.62 0.14 300), oklch(0.46 0.16 290));
+}
+html[data-theme='macos'] .deek-app-icon-neutral {
+  background: linear-gradient(160deg, oklch(0.62 0.03 255), oklch(0.48 0.02 255));
+}
+
+html[data-theme='macos'] .deek-nav-item {
+  border-radius: 999px;
+}
+
+html[data-theme='macos'] .deek-nav-item-active {
+  box-shadow: none;
+  font-weight: 560;
+  background: oklch(0.45 0.02 255 / 12%);
+}
+
+
+
+html[data-theme='macos'] .deek-glass,
+html[data-theme='macos'] .deek-glass-strong,
+html[data-theme='macos'] .deek-panel {
+  border-color: var(--card-border);
+  background: oklch(1 0.002 250 / 62%);
+  box-shadow:
+    0 1px 0 oklch(1 0 0 / 55%) inset,
+    0 8px 28px oklch(0.3 0.03 255 / 7%);
+  backdrop-filter: blur(32px) saturate(1.55);
+  -webkit-backdrop-filter: blur(32px) saturate(1.55);
+}
+
+html[data-theme='macos'] .deek-glass-strong {
+  background: oklch(1 0.002 250 / 74%);
+}
+
+/* System Settings–style grouped cards — keep readable height */
+html[data-theme='macos'] .deek-surface-card {
+  min-height: 5.25rem;
+  border-radius: 0.8rem;
+  border-color: oklch(0.78 0.01 250 / 22%);
+  background: oklch(1 0.002 250 / 68%);
+  box-shadow:
+    0 0.5px 0 oklch(1 0 0 / 70%) inset,
+    0 1px 2px oklch(0.3 0.03 255 / 5%);
+  transform: none;
+}
+html[data-theme='macos'] .deek-surface-card:hover {
+  transform: none;
+  border-color: oklch(0.7 0.02 250 / 28%);
+  background: oklch(1 0.002 250 / 82%);
+}
+html[data-theme='macos'] .deek-surface-card-current {
+  outline: 2px solid oklch(0.58 0.19 250 / 35%);
+  outline-offset: 1px;
+}
+html[data-theme='macos'] .deek-surface-card-featured {
+  min-height: 5.75rem;
+  padding: 1.15rem 1.25rem;
+}
+html[data-theme='macos'] .deek-card-chevron {
+  color: oklch(0.55 0.02 255 / 70%);
+  font-weight: 500;
+}
+html[data-theme='macos'] .deek-card-grid {
+  gap: 0.55rem;
+}
+
+/* Launch page: System Settings density */
+html[data-theme='macos'] .deek-launch-page {
+  padding-left: 1.75rem;
+  padding-right: 1.75rem;
+}
+html[data-theme='macos'] .deek-launch-title {
+  font-size: 1.35rem;
+  letter-spacing: -0.03em;
+  font-weight: 700;
+}
+html[data-theme='macos'] .deek-launch-logo {
+  border-radius: 22%;
+}
+html[data-theme='macos'] .deek-metric-card {
+  border-radius: 0.7rem;
+  background: oklch(1 0.002 250 / 48%);
+  box-shadow: none;
+}
+html[data-theme='macos'] .deek-section-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: oklch(0.38 0.02 255);
+}
+html[data-theme='macos'] .deek-section-desc {
+  max-width: 40rem;
+  color: oklch(0.48 0.02 255 / 88%);
+}
+html[data-theme='macos'] .deek-grouped-list {
+  overflow: hidden;
+  border-radius: 0.7rem;
+  border: 1px solid oklch(0.78 0.01 250 / 20%);
+  background: oklch(1 0.002 250 / 55%);
+}
+html[data-theme='macos'] .deek-grouped-list > .deek-list-row + .deek-list-row,
+html[data-theme='macos'] .deek-grouped-list > button + button {
+  border-top: 1px solid oklch(0.78 0.01 250 / 18%);
+}
+html[data-theme='macos'] .deek-grouped-panel {
+  padding: 0.9rem;
+  background: oklch(1 0.002 250 / 48%);
+  box-shadow: none;
+}
+html[data-theme='macos'] .deek-grouped-panel > h2 {
+  padding-inline: 0.15rem;
+}
+
+/* Project cards */
+html[data-theme='macos'] .deek-project-card {
+  border-radius: 0.85rem;
+  background: oklch(1 0.002 250 / 70%);
+  box-shadow:
+    0 0.5px 0 oklch(1 0 0 / 70%) inset,
+    0 6px 20px oklch(0.3 0.03 255 / 6%);
+}
+html[data-theme='macos'] .deek-project-card:hover {
+  transform: none;
+  background: oklch(1 0.002 250 / 86%);
+}
+html[data-theme='macos'] .deek-project-card-list {
+  border-radius: 0.65rem;
+  min-height: 3.5rem;
+}
+
+/* shadcn Card under macOS */
+html[data-theme='macos'] [data-slot='card'] {
+  border-radius: 0.85rem;
+  border-color: oklch(0.78 0.01 250 / 20%);
+  background: oklch(1 0.002 250 / 70%);
+  box-shadow:
+    0 0.5px 0 oklch(1 0 0 / 70%) inset,
+    0 8px 24px oklch(0.3 0.03 255 / 6%);
+  backdrop-filter: blur(28px) saturate(1.5);
+  -webkit-backdrop-filter: blur(28px) saturate(1.5);
+}
+html[data-theme='macos'] [data-slot='card-footer'] {
+  background: oklch(0.96 0.006 250 / 55%);
+  border-color: oklch(0.78 0.01 250 / 16%);
+}
+
+/* Dialogs / sheets */
+html[data-theme='macos'] [data-slot='dialog-overlay'] {
+  background: oklch(0.35 0.02 255 / 22%);
+  backdrop-filter: blur(8px) saturate(1.2);
+  -webkit-backdrop-filter: blur(8px) saturate(1.2);
+}
+html[data-theme='macos'] [data-slot='dialog-content'] {
+  border-radius: 1rem;
+  border-color: oklch(0.78 0.01 250 / 24%);
+  background: oklch(0.995 0.002 250 / 92%);
+  box-shadow:
+    0 0.5px 0 oklch(1 0 0 / 80%) inset,
+    0 24px 64px oklch(0.25 0.03 255 / 22%);
+  padding: 1.15rem;
+  max-width: 28rem;
+}
+
+/* Controls */
+html[data-theme='macos'] input:not([type='checkbox']):not([type='radio']),
+html[data-theme='macos'] textarea,
+html[data-theme='macos'] [data-slot='select-trigger'] {
+  border-radius: 0.5rem;
+  border-color: oklch(0.72 0.015 250 / 28%);
+  background: oklch(1 0.002 250 / 70%);
+  box-shadow: inset 0 0.5px 1px oklch(0.3 0.02 255 / 6%);
+}
+html[data-theme='macos'] button[data-slot='button'],
+html[data-theme='macos'] .group\/button {
+  border-radius: 0.5rem;
+  letter-spacing: -0.01em;
+}
+
+/* Knowledge / editor chrome */
+html[data-theme='macos'] .deek-page-title-input {
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+html[data-theme='macos'] .deek-page-subtitle-input {
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+html[data-theme='macos'] .deek-blocknote-editor a {
+  color: oklch(0.52 0.19 250);
+}
+html[data-theme='macos'] .deek-blocknote-editor .bn-editor {
+  font-family: var(--font-ui);
+  font-size: 0.95rem;
+  line-height: 1.65;
+}
+html[data-theme='macos'] .deek-blocknote-editor [data-content-type='codeBlock'] select,
+html[data-theme='macos'] .deek-blocknote-editor pre + div select {
+  border-radius: 0.4rem;
+  background: oklch(0.98 0.004 250);
+}
+
+/* Titlebar drag leave room for traffic lights */
+html[data-theme='macos'] .deek-titlebar-drag {
+  left: 5rem;
+}
+
+/* Badges more like mac labels */
+html[data-theme='macos'] [data-slot='badge'] {
+  border-radius: 999px;
+  font-weight: 550;
+  letter-spacing: -0.01em;
+}
+
+/*
+ * Knowledge materials — Notes-style hierarchy (solid panes, not one flat glass).
+ * Rail (source) = cool sidebar gray
+ * Tree (list)   = slightly lighter list surface
+ * Editor        = pure paper white
+ */
+html[data-theme='macos'] .deek-knowledge-shell {
+  background: oklch(0.96 0.006 250);
+}
+html[data-theme='macos'] .deek-knowledge-rail {
+  background: oklch(0.945 0.008 250);
+  border-right: 1px solid oklch(0.88 0.01 250 / 70%);
+  box-shadow: none;
+}
+html[data-theme='macos'] .deek-knowledge-tree {
+  background: oklch(0.985 0.004 250);
+  border-right: 1px solid oklch(0.88 0.01 250 / 65%);
+  min-width: 20rem;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+html[data-theme='macos'] .deek-knowledge-editor {
+  background: oklch(1 0 0);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+html[data-theme='macos'] .deek-knowledge-tree-header {
+  border-bottom-color: oklch(0.9 0.008 250 / 80%);
+  background: oklch(0.985 0.004 250);
+}
+html[data-theme='macos'] .deek-knowledge-search {
+  border: 0;
+  background: oklch(0.94 0.008 250);
+  box-shadow: inset 0 0.5px 1px oklch(0.4 0.02 255 / 8%);
+}
+html[data-theme='macos'] .deek-tree-row {
+  border-radius: 0.5rem;
+  min-height: 2.5rem;
+}
+html[data-theme='macos'] .deek-tree-row:hover {
+  background: oklch(0.5 0.02 255 / 6%);
+}
+html[data-theme='macos'] .deek-tree-row-active,
+html[data-theme='macos'] .deek-tree-row-active:hover {
+  /* system selection blue */
+  background: oklch(0.58 0.19 250);
+  color: white;
+  font-weight: 560;
+}
+html[data-theme='macos'] .deek-tree-row-active button,
+html[data-theme='macos'] .deek-tree-row-active .text-muted-foreground {
+  color: inherit;
+}
+html[data-theme='macos'] .deek-tree-row-active span {
+  color: inherit;
+}
+html[data-theme='macos'] .deek-knowledge-doc-toolbar {
+  background: oklch(1 0 0 / 92%);
+  border-bottom: 1px solid oklch(0.92 0.006 250);
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+}
+html[data-theme='macos'] .deek-segmented {
+  border: 1px solid oklch(0.88 0.01 250 / 70%);
+  background: oklch(0.96 0.006 250);
+  box-shadow: none;
+  border-radius: 0.55rem;
+  padding: 0.15rem;
+}
+html[data-theme='macos'] .deek-segmented-item {
+  border-radius: 0.4rem;
+  color: oklch(0.35 0.02 255);
+  box-shadow: none;
+}
+html[data-theme='macos'] .deek-segmented-item[data-active='true'] {
+  background: oklch(1 0 0);
+  color: oklch(0.2 0.02 255);
+  box-shadow: 0 0.5px 1px oklch(0.3 0.02 255 / 12%);
+}
+html[data-theme='macos'] .deek-knowledge-shell .deek-blocknote-editor,
+html[data-theme='macos'] .deek-knowledge-shell .deek-blocknote-editor .bn-container,
+html[data-theme='macos'] .deek-knowledge-shell .deek-blocknote-editor .bn-editor {
+  background: transparent !important;
+}
+html[data-theme='macos'] .deek-knowledge-shell .bn-editor {
+  color: oklch(0.2 0.02 255);
+}
+
+/* Settings info rows */
+html[data-theme='macos'] .deek-settings-page [data-slot='card'] h2 {
+  letter-spacing: -0.02em;
+}
+
+/* Prefer thinner strokes on lucide in macOS */
+html[data-theme='macos'] .deek-app-icon svg,
+html[data-theme='macos'] .deek-sidebar-nav svg,
+html[data-theme='macos'] .deek-topbar-inner svg,
+html[data-theme='macos'] .deek-page-actions svg,
+html[data-theme='macos'] button svg {
+  stroke-width: 1.75;
+}
+
+/* Page header: weight only — do NOT globally shrink Tailwind text-* */
+html[data-theme='macos'] .deek-page-header {
+  margin-bottom: 0.25rem;
+}
+html[data-theme='macos'] .deek-page-title {
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+html[data-theme='macos'] .deek-page-desc {
+  max-width: 36rem;
+  opacity: 0.92;
+  font-size: var(--text-body);
+  line-height: 1.55;
+}
+
+/* Dialog as macOS alert/sheet — roomy, not a tiny web modal */
+html[data-theme='macos'] [data-slot='dialog-content'],
+html[data-theme='macos'] .deek-dialog {
+  gap: 1.1rem;
+  border-radius: 1rem;
+  border-color: oklch(0.78 0.01 250 / 22%);
+  background: oklch(0.995 0.002 250 / 96%);
+  box-shadow:
+    0 0.5px 0 oklch(1 0 0 / 85%) inset,
+    0 32px 90px oklch(0.25 0.03 255 / 30%);
+  font-size: var(--text-body);
+}
+html[data-theme='macos'] [data-slot='dialog-title'] {
+  font-size: var(--text-title2);
+  line-height: 1.3;
+}
+html[data-theme='macos'] [data-slot='dialog-description'] {
+  font-size: var(--text-body);
+  line-height: 1.55;
+  max-width: 36rem;
+}
+html[data-theme='macos'] [data-slot='dialog-footer'],
+html[data-theme='macos'] .deek-dialog-footer {
+  margin: 0.5rem 0 0;
+  padding: 0.85rem 0 0;
+  border-top: 1px solid oklch(0.78 0.01 250 / 16%);
+  background: transparent;
+  border-radius: 0;
+}
+html[data-theme='macos'] .deek-dialog-footer [data-slot='button'] {
+  min-width: 5.5rem;
+}
+html[data-theme='macos'] .deek-dialog-close {
+  opacity: 0.5;
+}
+html[data-theme='macos'] .deek-dialog-close:hover {
+  opacity: 1;
+}
+
+/* Project list = Finder-like single surface with row separators */
+html[data-theme='macos'] .deek-project-list {
+  background: oklch(1 0.002 250 / 72%);
+  border-color: oklch(0.78 0.01 250 / 20%);
+  box-shadow:
+    0 0.5px 0 oklch(1 0 0 / 70%) inset,
+    0 8px 24px oklch(0.3 0.03 255 / 6%);
+}
+html[data-theme='macos'] .deek-project-card-list {
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+}
+html[data-theme='macos'] .deek-project-card-list:hover {
+  background: oklch(0.5 0.02 255 / 6%);
+}
+html[data-theme='macos'] .deek-project-card:not(.deek-project-card-list) {
+  min-height: 13rem;
+}
+
+/*
+ * Maximized windows: content should not look like a thin strip of tiny UI
+ * floating in a huge empty pane. Use viewport-scaled padding + optional max width.
+ *
+ * IMPORTANT: multi-pane shells (智库) must be edge-to-edge — no outer padding.
+ */
+.deek-shell-content > main:not(.deek-knowledge-shell),
+.deek-shell-content > .deek-app-bg:not(.deek-knowledge-shell),
+main.p-6:not(.deek-knowledge-shell),
+.deek-settings-page {
+  padding: var(--page-pad-y) var(--page-pad-x) calc(var(--page-pad-y) + 0.5rem);
+}
+
+/* Knowledge (project interior) is a full-bleed multi-column shell */
+.deek-shell-content > main.deek-knowledge-shell,
+.deek-shell-content > .deek-knowledge-shell,
+main.deek-knowledge-shell {
+  padding: 0 !important;
+  margin: 0;
+  height: 100%;
+  min-height: 0;
+}
+
+/* Readable content band on ultra-wide / maximized displays (not for knowledge shell) */
+.deek-shell-content > main:not(.deek-knowledge-shell) > .deek-page-header,
+.deek-shell-content > main:not(.deek-knowledge-shell) > section,
+.deek-shell-content > main:not(.deek-knowledge-shell) > .mt-4,
+.deek-shell-content > main:not(.deek-knowledge-shell) > .mt-5,
+.deek-settings-page > section,
+.deek-settings-page > .mt-5 {
+  max-width: var(--page-max-w);
+}
+
+html[data-theme='macos'] .deek-settings-page [data-slot='card'] {
+  gap: 0.9rem;
+}
+html[data-theme='macos'] .deek-settings-page h2 {
+  font-size: var(--text-title3);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+/* Sidebar: medium/large size language (HIG: row/text/glyph follow sidebar size) */
+html[data-theme='macos'] .deek-shell-sidebar {
+  background:
+    linear-gradient(180deg, oklch(0.99 0.004 250 / 72%), oklch(0.96 0.01 250 / 52%));
+}
+html[data-theme='macos'] .deek-sidebar-nav {
+  padding: 0.85rem 0.75rem 0.9rem;
+}
+html[data-theme='macos'] .deek-sidebar-link {
+  min-height: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.65rem;
+  font-size: var(--text-body);
+  font-weight: 550;
+  letter-spacing: -0.015em;
+  gap: 0.7rem;
+  padding-inline: 0.7rem;
+}
+html[data-theme='macos'] .deek-sidebar-link svg {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+html[data-theme='macos'] .deek-sidebar-link.deek-nav-item-active,
+html[data-theme='macos'] .deek-sidebar-nav a.deek-nav-item-active {
+  background: oklch(0.45 0.02 255 / 12%);
+  color: oklch(0.18 0.03 255);
+  font-weight: 600;
+  box-shadow: none;
+}
+html[data-theme='macos'] .deek-sidebar-caption {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  opacity: 0.85;
+  margin-bottom: 0.35rem;
+}
+html[data-theme='macos'] .deek-sidebar-brand {
+  margin-bottom: 1rem;
+  padding-bottom: 0.35rem;
+}
+html[data-theme='macos'] .deek-shell-titlebar {
+  height: var(--shell-titlebar-h);
+}
+
+/* Tables → quieter list headers */
+html[data-theme='macos'] .deek-list-table-head {
+  background: transparent !important;
+  border-bottom: 1px solid oklch(0.78 0.01 250 / 18%);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: oklch(0.45 0.02 255);
+}
+
+/* Empty states quieter */
+html[data-theme='macos'] .deek-empty-state {
+  border-style: solid;
+  border-color: oklch(0.78 0.01 250 / 18%);
+  background: oklch(1 0.002 250 / 45%);
+  box-shadow: none;
+}
+html[data-theme='macos'] .deek-empty-state h2 {
+  font-size: var(--text-title2);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+/* Knowledge title scale */
+html[data-theme='macos'] .deek-page-title-input {
+  font-size: 2.35rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.18;
+}
+html[data-theme='macos'] .deek-page-subtitle-input {
+  font-size: 1.15rem;
+  font-weight: 500;
+}
+
+/* Badge outline = trailing meta */
+html[data-theme='macos'] [data-slot='badge'][data-variant='outline'] {
+  opacity: 0.85;
+}
+html[data-theme='macos'] [data-slot='badge'][data-variant='tag'] {
+  border-radius: 0.28rem;
+  font-weight: 500;
+}
+
+/* Info rows inside cards */
+html[data-theme='macos'] .deek-info-row {
+  border-radius: 0.5rem;
+  border-color: transparent;
+  background: oklch(0.5 0.02 255 / 5%);
+  font-size: var(--text-callout);
+}
+
+/* Soften dashed add tiles */
+html[data-theme='macos'] .deek-add-tile {
+  min-height: 5rem;
+  border-radius: 0.8rem;
+  border-color: oklch(0.72 0.015 250 / 28%);
+  background: oklch(1 0.002 250 / 35%);
+}
+
+/* Launch: keep roomy, not cramped */
+html[data-theme='macos'] .deek-launch-page {
+  padding-top: 3.5rem;
+  padding-bottom: 2.25rem;
+  padding-left: 2rem;
+  padding-right: 2rem;
+}
+html[data-theme='macos'] .deek-launch-hero {
+  gap: 1rem;
+}
+html[data-theme='macos'] .deek-launch-hero-main,
+html[data-theme='macos'] .deek-launch-hero-side {
+  padding: 1.35rem 1.4rem;
+}
+html[data-theme='macos'] .deek-metric-row {
+  gap: 0.75rem;
+}
+html[data-theme='macos'] .deek-metric-card {
+  padding: 0.9rem 1rem;
+}
+html[data-theme='macos'] .deek-metric-card > div:nth-child(2) {
+  font-size: var(--text-title2);
+  font-weight: 650;
+}
+
+
+
+/* Select popover */
+html[data-theme='macos'] [data-slot='select-content'] {
+  border-radius: 0.55rem;
+  border: 1px solid oklch(0.78 0.01 250 / 22%);
+  background: oklch(0.995 0.002 250 / 94%);
+  box-shadow: 0 12px 40px oklch(0.28 0.03 255 / 16%);
+  backdrop-filter: blur(20px) saturate(1.4);
+}
+
+/* ——— Unified page frame (all in-window pages) ——— */
+.deek-page-frame {
+  padding: var(--page-pad-y) var(--page-pad-x) calc(var(--page-pad-y) + 0.75rem);
+}
+.deek-page-band {
+  width: 100%;
+}
+.deek-page-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: 2.75rem;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-panel);
+  background: var(--glass-bg);
+  box-shadow: var(--glass-highlight);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+.deek-page-section {
+  display: grid;
+  gap: var(--space-3);
+}
+.deek-page-section-title {
+  font-size: var(--text-title3);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.deek-inset-group {
+  overflow: hidden;
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-panel);
+  background: var(--card-bg);
+  box-shadow: var(--glass-shadow-soft);
+  backdrop-filter: blur(var(--glass-blur));
+}
+.deek-inset-group > * + * {
+  border-top: 1px solid color-mix(in oklab, var(--card-border) 85%, transparent);
+}
+
+html[data-theme='macos'] .deek-page-toolbar {
+  background: oklch(1 0.002 250 / 58%);
+  border-color: oklch(0.78 0.01 250 / 18%);
+  box-shadow: none;
+}
+html[data-theme='macos'] .deek-inset-group {
+  background: oklch(1 0.002 250 / 72%);
+  border-color: oklch(0.78 0.01 250 / 18%);
+  box-shadow:
+    0 0.5px 0 oklch(1 0 0 / 70%) inset,
+    0 6px 18px oklch(0.3 0.03 255 / 5%);
+}
+
+/* Knowledge: Notes-like three pane */
+.deek-knowledge-shell {
+  grid-template-columns: var(--knowledge-rail-w) minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: var(--background);
+}
+.deek-knowledge-shell[data-pane='knowledge'] {
+  grid-template-columns: var(--knowledge-rail-w) var(--knowledge-tree-w) minmax(0, 1fr);
+}
+.deek-knowledge-rail {
+  border-right: 1px solid var(--sidebar-border);
+  background: var(--sidebar-bg);
+  margin: 0;
+}
+.deek-knowledge-tree {
+  border-right: 1px solid var(--sidebar-border);
+  background: var(--panel-bg);
+  margin: 0;
+}
+.deek-knowledge-editor {
+  /* solid paper — never leave transparent over app gradient */
+  background: var(--surface-elevated, #fff);
+}
+/*
+ * Editor fills the remaining pane — left-aligned, full width.
+ * Do NOT center with max-width (that caused empty side gutters).
+ * Original padding was roughly py-6 pl-16 pr-8.
+ */
+.deek-knowledge-editor-inner {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 1.5rem 2rem 5rem 4rem;
+}
+
+html[data-theme='macos'] .deek-knowledge-editor-inner {
+  max-width: none;
+  margin: 0;
+  padding: 1.25rem 2.25rem 5rem 3.5rem;
+}
+html[data-theme='macos'] .deek-knowledge-shell .deek-page-title-input {
+  font-size: 2.5rem;
+  color: oklch(0.16 0.02 255);
+}
+html[data-theme='macos'] .deek-knowledge-shell .deek-page-subtitle-input {
+  font-size: 1.15rem;
+  color: oklch(0.45 0.02 255);
+}
+
+/* Launch page as a window-scale home surface */
+.deek-launch-page {
+  padding:
+    calc(var(--shell-titlebar-h, 3.25rem) + var(--page-pad-y))
+    var(--page-pad-x)
+    var(--page-pad-y);
+}
+.deek-launch-shell {
+  max-width: var(--page-max-w);
+}
+
+/* Prefer 8pt rhythm for stacked blocks */
+.deek-stack-3 { display: grid; gap: var(--space-3); }
+.deek-stack-4 { display: grid; gap: var(--space-4); }
+.deek-stack-5 { display: grid; gap: var(--space-5); }
+.deek-stack-6 { display: grid; gap: var(--space-6); }
 
 @theme inline {
   --font-heading:

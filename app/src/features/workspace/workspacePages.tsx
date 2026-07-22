@@ -36,10 +36,10 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { AppShell } from '../../components/layout/AppShell'
-import { PageHeader } from '../../components/layout/PageHeader'
-import { WindowControls, WindowDragStrip } from '../../components/layout/WindowControls'
+import { PageFrame } from '../../components/layout/PageFrame'
+import { WindowDragStrip } from '../../components/layout/WindowControls'
 import { Badge } from '../../components/ui/badge'
-import { Button, buttonVariants } from '../../components/ui/button'
+import { Button } from '../../components/ui/button'
 import { Card } from '../../components/ui/card'
 import {
   Dialog,
@@ -63,21 +63,28 @@ import { Label } from '../../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select'
 import { Textarea } from '../../components/ui/textarea'
 import deekLogoMark from '../../assets/deek-logo-mark.png'
-import type { BackupPayload } from '../../repositories/repository'
+import type { BackupPayload, BackupRepository, Repositories } from '../../repositories/repository'
 import type { Project, ProjectTone, QuickEntry, QuickEntryTargetType, Workspace } from '../../domain/types'
 import { useRepositories, useRepositorySource } from '../../repositories/repositoryContext'
 import { cn } from '../../shared/cn'
 import { useWorkspaceTabs } from '../../stores/workspaceTabs'
-import { deploymentLabel, iconTone, workspaceLabel } from './workspaceLabels'
+import { connectionIconTone, deploymentLabel, iconTone, workspaceLabel } from './workspaceLabels'
 import { officialServiceUrl, useRuntimeConfig, type SavedServiceConnection } from '../../runtimeConfigContext'
 import { ServiceStorageSettingsCard } from '../settings/ServiceStorageSettingsCard'
 import { LocalStorageSettingsCard } from '../settings/LocalStorageSettingsCard'
 import { changeServicePassword } from '../settings/serviceAccountApi'
 import { createServerRepositories, getServiceInstance, loginToService, normalizeServiceUrl } from '../../repositories/serverRepository'
+import { ThemeSettingsCard } from '../../theme/ThemeSettingsCard'
+import { useTheme } from '../../theme/themeContext'
 import { migrateLocalBackupToService } from './migrateLocalBackup'
 
 type ProjectViewMode = 'grid' | 'list'
 type ProjectSortMode = 'updated' | 'name' | 'entries'
+
+function requireBackupRepository(repositories: Repositories): BackupRepository {
+  if (!repositories.backup) throw new Error('当前工作空间不支持客户端整库备份')
+  return repositories.backup
+}
 
 interface ProjectFormValues {
   name: string
@@ -87,10 +94,30 @@ interface ProjectFormValues {
 }
 
 const projectToneStyle: Record<ProjectTone, { dot: string; panel: string; icon: string; line: string }> = {
-  blue: { dot: 'bg-sky-500', panel: 'bg-sky-50 text-sky-700 ring-sky-100', icon: 'text-sky-600', line: 'border-l-sky-500' },
-  green: { dot: 'bg-emerald-500', panel: 'bg-emerald-50 text-emerald-700 ring-emerald-100', icon: 'text-emerald-600', line: 'border-l-emerald-500' },
-  violet: { dot: 'bg-violet-500', panel: 'bg-violet-50 text-violet-700 ring-violet-100', icon: 'text-violet-600', line: 'border-l-violet-500' },
-  slate: { dot: 'bg-slate-500', panel: 'bg-slate-100 text-slate-700 ring-slate-200', icon: 'text-slate-600', line: 'border-l-slate-500' },
+  blue: {
+    dot: 'bg-[var(--tone-blue-dot)]',
+    panel: 'bg-[var(--tone-blue-panel)] text-[var(--tone-blue-fg)] ring-1 ring-[var(--tone-blue-ring)]',
+    icon: 'text-[var(--tone-blue-icon)]',
+    line: 'border-l-[var(--tone-blue-line)]',
+  },
+  green: {
+    dot: 'bg-[var(--tone-green-dot)]',
+    panel: 'bg-[var(--tone-green-panel)] text-[var(--tone-green-fg)] ring-1 ring-[var(--tone-green-ring)]',
+    icon: 'text-[var(--tone-green-icon)]',
+    line: 'border-l-[var(--tone-green-line)]',
+  },
+  violet: {
+    dot: 'bg-[var(--tone-violet-dot)]',
+    panel: 'bg-[var(--tone-violet-panel)] text-[var(--tone-violet-fg)] ring-1 ring-[var(--tone-violet-ring)]',
+    icon: 'text-[var(--tone-violet-icon)]',
+    line: 'border-l-[var(--tone-violet-line)]',
+  },
+  slate: {
+    dot: 'bg-[var(--tone-slate-dot)]',
+    panel: 'bg-[var(--tone-slate-panel)] text-[var(--tone-slate-fg)] ring-1 ring-[var(--tone-slate-ring)]',
+    icon: 'text-[var(--tone-slate-icon)]',
+    line: 'border-l-[var(--tone-slate-line)]',
+  },
 }
 
 const toneOptions: Array<{ value: ProjectTone; label: string }> = [
@@ -110,18 +137,10 @@ const emptyProjects: Project[] = []
 const emptyQuickEntries: QuickEntry[] = []
 const standardEase = [0.22, 1, 0.36, 1] as const
 
-export function RootLayout() {
-  return (
-    <>
-      <WindowControls />
-      <Outlet />
-    </>
-  )
-}
-
 export function LaunchPage() {
   const repositories = useRepositories()
   const runtimeConfig = useRuntimeConfig()
+  const { theme, themes, setTheme } = useTheme()
   const queryClient = useQueryClient()
   const [unlockPassword, setUnlockPassword] = useState('')
   const [rememberUnlock, setRememberUnlock] = useState(true)
@@ -253,28 +272,29 @@ export function LaunchPage() {
   }
 
   return (
-    <main className="deek-app-bg min-h-screen px-8 pb-8 pt-14 text-foreground">
+    <main className="deek-app-bg deek-launch-page min-h-screen text-foreground">
       <WindowDragStrip />
-      <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="deek-glass-strong rounded-[var(--radius-dialog)] border p-6">
+      <div className="deek-launch-shell mx-auto w-full">
+      <section className="deek-launch-hero grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="deek-glass-strong deek-launch-hero-main rounded-[var(--radius-dialog)] border p-6">
           <div className="flex items-center gap-3">
-            <img src={deekLogoMark} alt="Deek PM" className="h-10 w-10 rounded-lg object-cover shadow-[var(--shadow-control)]" />
+            <img src={deekLogoMark} alt="Deek PM" className="deek-launch-logo h-10 w-10 rounded-[22%] object-cover shadow-[var(--shadow-control)]" />
             <div className="min-w-0">
-              <h1 className="truncate text-xl font-semibold">Deek PM</h1>
+              <h1 className="deek-launch-title truncate text-xl font-semibold tracking-tight">Deek PM</h1>
               <p className="mt-1 text-sm text-muted-foreground">本地库与服务连接相互独立：切换模式不会删除已保存的服务登录。</p>
             </div>
           </div>
-          <div className="mt-7 grid gap-3 md:grid-cols-3">
+          <div className="deek-metric-row mt-7 grid gap-3 md:grid-cols-3">
             <LaunchMetric icon={HardDrive} label="本地库" value={runtimeConfig.config.kind === 'local' ? '当前模式' : '可切换'} helper={local?.name ?? '纯离线 SQLCipher'} />
             <LaunchMetric icon={Cloud} label="云端连接" value={`${savedCloud.length}`} helper="已保存，可随时重进" />
             <LaunchMetric icon={Server} label="自部署" value={`${savedSelfhost.length}`} helper="已保存，可随时重进" />
           </div>
         </div>
-        <div className="deek-glass rounded-[var(--radius-dialog)] border p-5 text-foreground">
-          <span className="grid h-10 w-10 place-items-center rounded-[var(--radius-control)] border border-[var(--glass-border)] bg-[var(--glass-bg-strong)] text-muted-foreground">
-            {runtimeConfig.config.kind === 'local' ? <HardDrive size={18} /> : runtimeConfig.config.deployment === 'cloud' ? <Cloud size={18} /> : <Server size={18} />}
+        <div className="deek-glass deek-launch-hero-side rounded-[var(--radius-dialog)] border p-5 text-foreground">
+          <span className="deek-app-icon deek-app-icon-neutral grid h-10 w-10 place-items-center text-white">
+            {runtimeConfig.config.kind === 'local' ? <HardDrive size={18} strokeWidth={1.75} /> : runtimeConfig.config.deployment === 'cloud' ? <Cloud size={18} strokeWidth={1.75} /> : <Server size={18} strokeWidth={1.75} />}
           </span>
-          <h2 className="mt-4 text-base font-semibold">{runtimeConfig.config.kind === 'local' ? '当前使用纯离线模式' : '当前已连接服务端'}</h2>
+          <h2 className="mt-4 text-base font-semibold tracking-tight">{runtimeConfig.config.kind === 'local' ? '当前使用纯离线模式' : '当前已连接服务端'}</h2>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
             {runtimeConfig.config.kind === 'local'
               ? '正在浏览本机 SQLCipher 数据。下方「已保存服务连接」仍保留，可随时点回去。'
@@ -315,7 +335,7 @@ export function LaunchPage() {
           )}
         </div>
       </section>
-      <section className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <section className="deek-launch-body mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0">
           {workspacesError && <div className="mb-5 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{workspacesError instanceof Error ? workspacesError.message : '读取工作空间失败'}</div>}
           {runtimeConfig.config.kind === 'local' && local && (
@@ -353,10 +373,10 @@ export function LaunchPage() {
                 ))}
                 <button
                   type="button"
-                  className="flex min-h-28 items-center gap-3 rounded-[var(--radius-dialog)] border border-dashed bg-background/60 px-4 text-sm text-muted-foreground hover:bg-muted"
+                  className="deek-add-tile flex min-h-20 items-center gap-3 rounded-[var(--radius-dialog)] border border-dashed bg-background/60 px-4 text-[length:var(--text-callout)] text-muted-foreground hover:bg-muted"
                   onClick={() => openNewServiceDialog('selfhost')}
                 >
-                  <Plus size={18} />
+                  <Plus size={16} strokeWidth={1.75} />
                   新增连接
                 </button>
               </WorkspaceGrid>
@@ -377,15 +397,53 @@ export function LaunchPage() {
             )}
           </WorkspaceSection>
         </div>
-        <aside className="deek-glass rounded-[var(--radius-dialog)] border p-5">
-          <h2 className="text-base font-semibold">模式说明</h2>
-          <div className="mt-4 grid gap-3">
-            <LaunchStep icon={HardDrive} title="本地库" text="数据只在本机。切换到本地不会影响已保存的服务登录。" />
-            <LaunchStep icon={Server} title="服务连接" text="登录后写入「已保存服务连接」。会话过期时点卡片重新输入密码即可。" />
-            <LaunchStep icon={Download} title="迁移与备份" text="本地库可导出备份；迁到线上不会自动删本地数据。" />
+        <aside className="deek-launch-aside grid gap-4">
+          <div className="deek-glass deek-grouped-panel rounded-[var(--radius-dialog)] border p-5">
+            <h2 className="text-base font-semibold tracking-tight">外观主题</h2>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">可随时切换，选择会保存在本机。</p>
+            <div className="deek-grouped-list mt-4">
+              {themes.map((option) => {
+                const active = option.id === theme
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => setTheme(option.id)}
+                    className={cn(
+                      'deek-list-row flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm transition',
+                      active
+                        ? 'bg-[var(--nav-item-active-bg)]'
+                        : 'hover:bg-[var(--nav-item-hover-bg)]',
+                    )}
+                  >
+                    <span
+                      className="h-8 w-8 shrink-0 rounded-[22%] border border-black/5 shadow-sm"
+                      style={{
+                        background: `linear-gradient(145deg, ${option.preview.surface}, ${option.preview.background})`,
+                        boxShadow: `inset 0 0 0 1px ${option.preview.accent}33`,
+                      }}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <strong className="block truncate">{option.name}</strong>
+                      <span className="mt-0.5 block truncate text-xs text-muted-foreground">{active ? '当前使用' : '点击切换'}</span>
+                    </span>
+                    {active ? <Badge>使用中</Badge> : null}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+          <div className="deek-glass deek-grouped-panel rounded-[var(--radius-dialog)] border p-5">
+            <h2 className="text-base font-semibold tracking-tight">模式说明</h2>
+            <div className="deek-grouped-list mt-4">
+              <LaunchStep icon={HardDrive} title="本地库" text="数据只在本机。切换到本地不会影响已保存的服务登录。" />
+              <LaunchStep icon={Server} title="服务连接" text="登录后写入「已保存服务连接」。会话过期时点卡片重新输入密码即可。" />
+              <LaunchStep icon={Download} title="迁移与备份" text="本地库可导出备份；迁到线上不会自动删本地数据。" />
+            </div>
           </div>
         </aside>
       </section>
+      </div>
       <Dialog open={serviceDialogOpen} onOpenChange={setServiceDialogOpen}>
         <DialogContent>
           <form onSubmit={connectService}>
@@ -511,69 +569,75 @@ export function ProjectsPage() {
   }
 
   return (
-    <main className="deek-app-bg h-full overflow-auto p-6">
-      <section className="deek-glass-strong rounded-[var(--radius-dialog)] border px-5 py-4">
-        <PageHeader
-          eyebrow={workspaceLabel(workspace)}
-          title="项目"
-          description="集中管理项目说明、智库资料、账号、链接和本地附件索引。"
-          actions={
-            <>
-              <Badge variant="outline">{deploymentLabel(workspace)}</Badge>
-              <Button disabled={createProjectMutation.isPending} onClick={handleOpenCreate}>
-                <Plus size={16} />
-                新建项目
-              </Button>
-            </>
-          }
-        />
-      </section>
-      <div className="mt-5 grid gap-5 xl:grid-cols-[280px_minmax(0,1fr)]">
-        <QuickEntryShelf workspaceId={workspaceId} entries={publishedQuickEntries} className="xl:sticky xl:top-5 xl:self-start" />
-        <section className="min-w-0">
-          <div className="deek-glass sticky top-3 z-10 flex items-center justify-between rounded-[var(--radius-panel)] border px-3 py-2">
-            <div className="flex rounded-[var(--radius-control)] border border-[var(--glass-border)] bg-[var(--glass-bg)] p-1 backdrop-blur-[var(--glass-blur)]">
-              <Button size="icon" variant={viewMode === 'grid' ? 'secondary' : 'ghost'} aria-label="网格视图" onClick={() => setViewMode('grid')}>
-                <Grid2X2 size={16} />
-              </Button>
-              <Button size="icon" variant={viewMode === 'list' ? 'secondary' : 'ghost'} aria-label="列表视图" onClick={() => setViewMode('list')}>
-                <List size={16} />
-              </Button>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-muted-foreground">{projects.length} 个项目</span>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button size="icon" variant="ghost" aria-label="排序">
-                    <ArrowUpDown size={16} />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-40">
-                  <DropdownMenuLabel>排序方式</DropdownMenuLabel>
-                  <DropdownMenuItem onSelect={() => setSortMode('updated')}>最近更新</DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => setSortMode('name')}>项目名称</DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => setSortMode('entries')}>资料数量</DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+    <PageFrame
+      eyebrow={workspaceLabel(workspace)}
+      title="项目"
+      description="管理项目与智库资料。"
+      actions={
+        <>
+          <Badge variant="secondary">{deploymentLabel(workspace)}</Badge>
+          <Button disabled={createProjectMutation.isPending} onClick={handleOpenCreate}>
+            <Plus size={16} strokeWidth={1.75} />
+            新建项目
+          </Button>
+        </>
+      }
+      toolbar={
+        <div className="flex w-full items-center justify-between gap-3">
+          <div className="flex rounded-[var(--radius-control)] border border-[var(--glass-border)] bg-[var(--glass-bg)] p-0.5">
+            <Button size="icon" variant={viewMode === 'grid' ? 'secondary' : 'ghost'} aria-label="网格视图" onClick={() => setViewMode('grid')}>
+              <Grid2X2 size={16} strokeWidth={1.75} />
+            </Button>
+            <Button size="icon" variant={viewMode === 'list' ? 'secondary' : 'ghost'} aria-label="列表视图" onClick={() => setViewMode('list')}>
+              <List size={16} strokeWidth={1.75} />
+            </Button>
           </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[length:var(--text-callout)] text-muted-foreground">{projects.length} 个项目</span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="icon" variant="ghost" aria-label="排序">
+                  <ArrowUpDown size={16} strokeWidth={1.75} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-40">
+                <DropdownMenuLabel>排序方式</DropdownMenuLabel>
+                <DropdownMenuItem onSelect={() => setSortMode('updated')}>最近更新</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setSortMode('name')}>项目名称</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setSortMode('entries')}>资料数量</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+      }
+    >
+      <div className="grid gap-5 xl:grid-cols-[minmax(15rem,17.5rem)_minmax(0,1fr)]">
+        <QuickEntryShelf workspaceId={workspaceId} entries={publishedQuickEntries} className="xl:sticky xl:top-2 xl:self-start" />
+        <section className="min-w-0">
           <LazyMotion features={domAnimation}>
-            <m.section layout className={cn('mt-4 grid gap-2.5', viewMode === 'grid' ? 'grid-cols-[repeat(auto-fit,minmax(320px,1fr))]' : 'grid-cols-1')}>
+            <m.section
+              layout
+              className={cn(
+                viewMode === 'grid'
+                  ? 'grid grid-cols-[repeat(auto-fill,minmax(17.5rem,1fr))] gap-3'
+                  : 'deek-project-list deek-inset-group',
+              )}
+            >
               {sortedProjects.map((project) => (
                 <ProjectCard key={project.id} project={project} workspaceId={workspaceId} viewMode={viewMode} />
               ))}
             </m.section>
           </LazyMotion>
           {sortedProjects.length === 0 && (
-            <Card className="mt-4 grid min-h-72 place-items-center p-8 text-center">
+            <Card className="deek-empty-state grid min-h-60 place-items-center p-10 text-center">
               <div>
-                <span className="mx-auto grid h-12 w-12 place-items-center rounded-lg border bg-[var(--surface-muted)] text-muted-foreground">
-                  <Folder size={20} />
+                <span className="deek-app-icon deek-app-icon-neutral mx-auto grid h-12 w-12 place-items-center text-white">
+                  <Folder size={20} strokeWidth={1.75} />
                 </span>
-                <h2 className="mt-4 text-lg font-semibold">还没有项目</h2>
-                <p className="mt-2 text-sm text-muted-foreground">创建第一个本地项目，用来收纳资料、账号、链接和附件。</p>
+                <h2 className="mt-4 text-[length:var(--text-title2)] font-semibold">还没有项目</h2>
+                <p className="mt-2 text-[length:var(--text-body)] text-muted-foreground">创建第一个项目开始收纳资料。</p>
                 <Button className="mt-5" onClick={handleOpenCreate}>
-                  <Plus size={16} />
+                  <Plus size={16} strokeWidth={1.75} />
                   新建项目
                 </Button>
               </div>
@@ -600,7 +664,7 @@ export function ProjectsPage() {
           </form>
         </DialogContent>
       </Dialog>
-    </main>
+    </PageFrame>
   )
 }
 
@@ -623,51 +687,50 @@ export function ProjectStatsPage() {
   if (!workspace) return null
 
   return (
-    <main className="deek-app-bg h-full overflow-auto p-6">
-      <section className="deek-glass-strong rounded-[var(--radius-dialog)] border px-5 py-4">
-        <PageHeader
-          eyebrow={workspaceLabel(workspace)}
-          title="项目统计信息"
-          description="查看当前工作区的项目数量、资料沉淀和快捷入口上架情况。"
-          actions={<Badge variant="outline">{deploymentLabel(workspace)}</Badge>}
-        />
-      </section>
-      <section className="mt-5 grid gap-3 lg:grid-cols-4">
-        <ProjectStatCard icon={Folder} label="项目空间" value={`${projects.length}`} helper={workspace.type === 'local' ? '本机资料索引' : '团队协作空间'} />
-        <ProjectStatCard icon={Database} label="智库条目" value={`${totalEntryCount}`} helper="文本、账号、链接统一收纳" />
-        <ProjectStatCard icon={Pin} label="上架入口" value={`${publishedQuickEntryCount}`} helper={`${quickEntries.length} 个入口已纳入管理`} />
-        <ProjectStatCard icon={CalendarClock} label="最近更新" value={recentProject?.updatedAtText ?? '-'} helper={recentProject?.name ?? '暂无项目'} />
-      </section>
-      <section className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <Card className="p-4">
-          <h2 className="text-base font-semibold">资料量排行</h2>
-          <div className="mt-4 grid gap-2">
-            {topProjects.map((project) => (
-              <div key={project.id} className="grid grid-cols-[minmax(0,1fr)_80px] items-center rounded-md border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-2">
-                <span className="min-w-0">
-                  <strong className="block truncate text-sm">{project.name}</strong>
-                  <span className="mt-1 block truncate text-xs text-muted-foreground">{project.tag}</span>
-                </span>
-                <span className="text-right text-sm font-medium">{project.entryCount}</span>
-              </div>
-            ))}
-            {topProjects.length === 0 && <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">暂无项目统计数据</p>}
-          </div>
-        </Card>
-        <Card className="p-4">
-          <h2 className="text-base font-semibold">项目标签</h2>
-          <div className="mt-4 grid gap-2">
-            {tagStats.map(([tag, count]) => (
-              <div key={tag} className="flex items-center justify-between rounded-md bg-[var(--surface-muted)] px-3 py-2 text-sm">
-                <span className="truncate">{tag}</span>
-                <Badge variant="outline">{count}</Badge>
-              </div>
-            ))}
-            {tagStats.length === 0 && <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">暂无标签数据</p>}
-          </div>
-        </Card>
-      </section>
-    </main>
+    <PageFrame
+      eyebrow={workspaceLabel(workspace)}
+      title="统计"
+      description="项目与资料概览。"
+      actions={<Badge variant="secondary">{deploymentLabel(workspace)}</Badge>}
+    >
+      <div className="deek-stack-5">
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <ProjectStatCard icon={Folder} label="项目" value={`${projects.length}`} helper={workspace.type === 'local' ? '本机' : '服务端'} />
+          <ProjectStatCard icon={Database} label="智库条目" value={`${totalEntryCount}`} helper="文本 / 账号 / 链接" />
+          <ProjectStatCard icon={Pin} label="上架入口" value={`${publishedQuickEntryCount}`} helper={`共 ${quickEntries.length} 个`} />
+          <ProjectStatCard icon={CalendarClock} label="最近更新" value={recentProject?.updatedAtText ?? '—'} helper={recentProject?.name ?? '暂无'} />
+        </section>
+        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
+          <Card className="p-5">
+            <h2 className="deek-page-section-title">资料量排行</h2>
+            <div className="deek-inset-group mt-4">
+              {topProjects.map((project) => (
+                <div key={project.id} className="grid grid-cols-[minmax(0,1fr)_3.5rem] items-center gap-3 px-4 py-3">
+                  <span className="min-w-0">
+                    <strong className="block truncate text-[length:var(--text-body)] font-medium">{project.name}</strong>
+                    <span className="mt-0.5 block truncate text-[length:var(--text-caption)] text-muted-foreground">{project.tag}</span>
+                  </span>
+                  <span className="text-right text-[length:var(--text-body)] font-semibold tabular-nums">{project.entryCount}</span>
+                </div>
+              ))}
+              {topProjects.length === 0 && <p className="p-8 text-center text-muted-foreground">暂无数据</p>}
+            </div>
+          </Card>
+          <Card className="p-5">
+            <h2 className="deek-page-section-title">标签</h2>
+            <div className="deek-inset-group mt-4">
+              {tagStats.map(([tag, count]) => (
+                <div key={tag} className="flex items-center justify-between px-4 py-3">
+                  <span className="truncate text-[length:var(--text-body)]">{tag}</span>
+                  <span className="text-[length:var(--text-callout)] tabular-nums text-muted-foreground">{count}</span>
+                </div>
+              ))}
+              {tagStats.length === 0 && <p className="p-8 text-center text-muted-foreground">暂无标签</p>}
+            </div>
+          </Card>
+        </section>
+      </div>
+    </PageFrame>
   )
 }
 
@@ -788,78 +851,73 @@ export function QuickEntriesPage() {
   }
 
   return (
-    <main className="deek-app-bg h-full overflow-auto p-6">
-      <section className="deek-glass-strong rounded-[var(--radius-dialog)] border px-5 py-4">
-        <PageHeader
-          eyebrow={workspaceLabel(workspace)}
-          title="快捷入口管理"
-          description="统一管理本地文件、文件夹、快捷方式和常用地址，上架后会显示在项目页。"
-          actions={
-            <Button onClick={openCreateDialog}>
-              <Plus size={16} />
-              新增入口
-            </Button>
-          }
-        />
-      </section>
-      {quickEntryMessage && <div className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{quickEntryMessage}</div>}
-      <Card className="mt-5 overflow-hidden p-0">
-        <div className="grid grid-cols-[minmax(0,1fr)_120px_96px_176px] items-center border-b bg-[var(--surface-muted)] px-4 py-3 text-xs font-medium text-muted-foreground">
+    <PageFrame
+      eyebrow={workspaceLabel(workspace)}
+      title="快捷入口"
+      description="管理本机文件、文件夹与常用地址。"
+      actions={
+        <Button onClick={openCreateDialog}>
+          <Plus size={16} strokeWidth={1.75} />
+          新增入口
+        </Button>
+      }
+    >
+      {quickEntryMessage && <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-destructive">{quickEntryMessage}</div>}
+      <div className="deek-inset-group">
+        <div className="deek-list-table-head grid grid-cols-[minmax(0,1fr)_6rem_5rem_10rem] items-center px-4 py-2.5 text-muted-foreground">
           <span>入口</span>
           <span>类型</span>
           <span>状态</span>
           <span className="text-right">操作</span>
         </div>
-        <div className="divide-y">
-          {quickEntries.map((entry) => {
-            const Icon = quickEntryIcon(entry.targetType)
-            return (
-              <div key={entry.id} className="grid grid-cols-[minmax(0,1fr)_120px_96px_176px] items-center gap-3 px-4 py-3">
-                <button type="button" className="flex min-w-0 items-center gap-3 text-left" onClick={() => openQuickEntry(entry)}>
-                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-[var(--glass-border)] bg-[var(--glass-bg)] text-muted-foreground">
-                    <Icon size={17} />
-                  </span>
-                  <span className="min-w-0">
-                    <strong className="block truncate text-sm">{entry.name}</strong>
-                    <span className="mt-1 block truncate text-xs text-muted-foreground">{entry.target}</span>
-                  </span>
-                </button>
-                <span className="text-sm text-muted-foreground">{quickEntryTypeLabel[entry.targetType]}</span>
-                <Badge variant={entry.published ? 'default' : 'outline'}>{entry.published ? '已上架' : '未上架'}</Badge>
-                <div className="flex justify-end gap-1">
-                  <Button size="icon" variant="ghost" aria-label="打开" onClick={() => openQuickEntry(entry)}>
-                    <ExternalLink size={15} />
-                  </Button>
-                  <Button size="icon" variant="ghost" aria-label={entry.published ? '下架' : '上架'} onClick={() => toggleQuickEntryMutation.mutate(entry)}>
-                    {entry.published ? <PinOff size={15} /> : <Pin size={15} />}
-                  </Button>
-                  <Button size="icon" variant="ghost" aria-label="编辑" onClick={() => openEditDialog(entry)}>
-                    <Pencil size={15} />
-                  </Button>
-                  <Button size="icon" variant="ghost" aria-label="删除" onClick={() => deleteQuickEntryMutation.mutate(entry.id)}>
-                    <Trash2 size={15} />
-                  </Button>
-                </div>
-              </div>
-            )
-          })}
-          {quickEntries.length === 0 && (
-            <div className="grid min-h-52 place-items-center p-8 text-center">
-              <div>
-                <span className="mx-auto grid h-12 w-12 place-items-center rounded-lg border bg-[var(--surface-muted)] text-muted-foreground">
-                  <Pin size={20} />
+        {quickEntries.map((entry) => {
+          const Icon = quickEntryIcon(entry.targetType)
+          return (
+            <div key={entry.id} className="grid grid-cols-[minmax(0,1fr)_6rem_5rem_10rem] items-center gap-3 px-4 py-3.5">
+              <button type="button" className="flex min-w-0 items-center gap-3 text-left" onClick={() => openQuickEntry(entry)}>
+                <span className="deek-app-icon deek-app-icon-neutral grid h-10 w-10 shrink-0 place-items-center text-white">
+                  <Icon size={17} strokeWidth={1.75} />
                 </span>
-                <h2 className="mt-4 text-lg font-semibold">还没有快捷入口</h2>
-                <p className="mt-2 text-sm text-muted-foreground">选择本地文件、文件夹或快捷方式，上架后会出现在项目页。</p>
-                <Button className="mt-5" onClick={openCreateDialog}>
-                  <Plus size={16} />
-                  新增入口
+                <span className="min-w-0">
+                  <strong className="block truncate text-[length:var(--text-body)] font-medium">{entry.name}</strong>
+                  <span className="mt-0.5 block truncate text-[length:var(--text-callout)] text-muted-foreground">{entry.target}</span>
+                </span>
+              </button>
+              <span className="text-[length:var(--text-callout)] text-muted-foreground">{quickEntryTypeLabel[entry.targetType]}</span>
+              <Badge variant={entry.published ? 'default' : 'secondary'}>{entry.published ? '已上架' : '未上架'}</Badge>
+              <div className="flex justify-end gap-0.5">
+                <Button size="icon" variant="ghost" aria-label="打开" onClick={() => openQuickEntry(entry)}>
+                  <ExternalLink size={15} strokeWidth={1.75} />
+                </Button>
+                <Button size="icon" variant="ghost" aria-label={entry.published ? '下架' : '上架'} onClick={() => toggleQuickEntryMutation.mutate(entry)}>
+                  {entry.published ? <PinOff size={15} strokeWidth={1.75} /> : <Pin size={15} strokeWidth={1.75} />}
+                </Button>
+                <Button size="icon" variant="ghost" aria-label="编辑" onClick={() => openEditDialog(entry)}>
+                  <Pencil size={15} strokeWidth={1.75} />
+                </Button>
+                <Button size="icon" variant="ghost" aria-label="删除" onClick={() => deleteQuickEntryMutation.mutate(entry.id)}>
+                  <Trash2 size={15} strokeWidth={1.75} />
                 </Button>
               </div>
             </div>
-          )}
-        </div>
-      </Card>
+          )
+        })}
+        {quickEntries.length === 0 && (
+          <div className="deek-empty-state grid min-h-52 place-items-center p-10 text-center">
+            <div>
+              <span className="deek-app-icon deek-app-icon-neutral mx-auto grid h-12 w-12 place-items-center text-white">
+                <Pin size={20} strokeWidth={1.75} />
+              </span>
+              <h2 className="mt-4 text-[length:var(--text-title2)] font-semibold">还没有快捷入口</h2>
+              <p className="mt-2 text-[length:var(--text-body)] text-muted-foreground">添加文件或文件夹，上架后显示在项目页。</p>
+              <Button className="mt-5" onClick={openCreateDialog}>
+                <Plus size={16} strokeWidth={1.75} />
+                新增入口
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-xl">
           <form onSubmit={submitQuickEntry}>
@@ -879,7 +937,7 @@ export function QuickEntriesPage() {
           </form>
         </DialogContent>
       </Dialog>
-    </main>
+    </PageFrame>
   )
 }
 
@@ -937,7 +995,7 @@ export function BackupPage() {
         setBackupMessage('备份密码至少需要 8 个字符，并且两次输入必须一致')
         return
       }
-      const payload = await repositories.backup.exportBackup()
+      const payload = await requireBackupRepository(repositories).exportBackup()
       const content = JSON.stringify(payload, null, 2)
       const omittedWarning = payload.omittedManagedAssets?.length
         ? `；${payload.omittedManagedAssets.length} 个大文件未内嵌，请同时备份物理存储目录`
@@ -967,7 +1025,7 @@ export function BackupPage() {
 
     if (activeAction.kind === 'restore') {
       if (restorePreview) {
-        await repositories.backup.importBackup(restorePreview.payload)
+        await requireBackupRepository(repositories).importBackup(restorePreview.payload)
         await queryClient.invalidateQueries()
         setBackupMessage(`已恢复：${restorePreview.filePath}`)
         resetRestoreSelection()
@@ -1023,7 +1081,7 @@ export function BackupPage() {
         if (migrationDeployment === 'cloud' && instance.deployment !== 'cloud') throw new Error('该地址不是官方云服务实例')
         const login = await loginToService(baseUrl, migrationEmail.trim(), migrationPassword)
         const target = createServerRepositories({ baseUrl, deployment: instance.deployment, accessToken: login.accessToken })
-        const payload = await repositories.backup.exportBackup()
+        const payload = await requireBackupRepository(repositories).exportBackup()
         const result = await migrateLocalBackupToService(payload, target, setMigrationProgress)
         setBackupMessage(`迁移完成：${result.projects} 个项目、${result.entries} 条资料、${result.assets} 个文件、${result.attachments} 个附件。${result.skippedPathAttachments ? `已跳过 ${result.skippedPathAttachments} 个仅本机可用的路径引用。` : ''}`)
         await runtimeConfig.connectService({ baseUrl, deployment: instance.deployment, email: migrationEmail.trim(), password: migrationPassword })
@@ -1053,7 +1111,7 @@ export function BackupPage() {
         setActiveAction(null)
         return
       }
-      const result = await window.deek.writeEncryptedBackupToDirectory(selectedDirectory, JSON.stringify(await repositories.backup.exportBackup()), backupPassword)
+      const result = await window.deek.writeEncryptedBackupToDirectory(selectedDirectory, JSON.stringify(await requireBackupRepository(repositories).exportBackup()), backupPassword)
       window.localStorage.setItem(autoBackupDirectoryStorageKey, selectedDirectory)
       window.localStorage.setItem(autoBackupPasswordStorageKey, encryptedPassword)
       if (result.ok) window.localStorage.removeItem(autoBackupErrorStorageKey)
@@ -1094,29 +1152,35 @@ export function BackupPage() {
   })()
 
   return (
-    <main className="h-full overflow-auto p-6">
-      <PageHeader title="备份与迁移" description="本地模式的数据导出、恢复、自动备份和后续迁移入口。" />
-      {backupMessage && <div className="mt-5 rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">{backupMessage}</div>}
-      <Card className="mt-5 flex items-center justify-between gap-4 p-4">
-        <div>
-          <h2 className="text-sm font-semibold">自动备份路径</h2>
-          <p className="mt-1 break-all text-sm text-muted-foreground">{autoBackupDir || '未设置自动备份目录'}</p>
-          {autoBackupError && <p className="mt-1 text-sm text-destructive">{autoBackupError}</p>}
-        </div>
-        {autoBackupDir && <Button variant="outline" onClick={disableAutoBackup}>关闭自动备份</Button>}
-      </Card>
-      <section className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        {cards.map(({ kind, title, subtitle, icon: Icon, description }) => (
-          <button key={kind} className="rounded-lg border bg-background p-4 text-left shadow-[var(--shadow-control)] transition hover:border-foreground/20 hover:shadow-[var(--shadow-panel)]" onClick={() => setActiveAction({ kind, title, subtitle, icon: Icon, description })}>
-            <span className="grid h-10 w-10 place-items-center rounded-md border bg-[var(--surface-muted)] text-muted-foreground">
-              <Icon size={18} />
-            </span>
-            <h2 className="mt-4 font-semibold">{title}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
-            <p className="mt-4 text-xs leading-5 text-muted-foreground">{description}</p>
-          </button>
-        ))}
-      </section>
+    <PageFrame title="备份与迁移" description="导出、恢复与自动备份。">
+      {backupMessage && <div className="mb-4 rounded-lg border bg-muted/30 p-3 text-[length:var(--text-body)] text-muted-foreground">{backupMessage}</div>}
+      <div className="deek-stack-5">
+        <Card className="flex items-center justify-between gap-4 p-5">
+          <div className="min-w-0">
+            <h2 className="deek-page-section-title">自动备份路径</h2>
+            <p className="mt-1.5 break-all text-[length:var(--text-body)] text-muted-foreground">{autoBackupDir || '未设置'}</p>
+            {autoBackupError && <p className="mt-1 text-[length:var(--text-body)] text-destructive">{autoBackupError}</p>}
+          </div>
+          {autoBackupDir && <Button variant="outline" onClick={disableAutoBackup}>关闭</Button>}
+        </Card>
+        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {cards.map(({ kind, title, subtitle, icon: Icon, description }) => (
+            <button
+              key={kind}
+              type="button"
+              className="deek-surface-card deek-glass rounded-[var(--radius-card)] border p-5 text-left transition hover:border-[var(--border-strong)]"
+              onClick={() => setActiveAction({ kind, title, subtitle, icon: Icon, description })}
+            >
+              <span className="deek-app-icon deek-app-icon-neutral grid h-11 w-11 place-items-center text-white">
+                <Icon size={18} strokeWidth={1.75} />
+              </span>
+              <h2 className="mt-4 text-[length:var(--text-title3)] font-semibold tracking-[-0.02em]">{title}</h2>
+              <p className="mt-1 text-[length:var(--text-body)] text-muted-foreground">{subtitle}</p>
+              <p className="mt-3 text-[length:var(--text-callout)] leading-relaxed text-muted-foreground">{description}</p>
+            </button>
+          ))}
+        </section>
+      </div>
       <Dialog
         open={Boolean(activeAction)}
         onOpenChange={(open) => {
@@ -1205,7 +1269,7 @@ export function BackupPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </main>
+    </PageFrame>
   )
 }
 
@@ -1259,7 +1323,8 @@ export function SettingsPage() {
     window.localStorage.removeItem(autoBackupDirectoryStorageKey)
     window.localStorage.removeItem(autoBackupErrorStorageKey)
     window.localStorage.removeItem(autoBackupPasswordStorageKey)
-    await repositories.backup.importBackup(await repositories.backup.exportBackup())
+    const backup = requireBackupRepository(repositories)
+    await backup.importBackup(await backup.exportBackup())
     await queryClient.invalidateQueries()
     setConfirmResetOpen(false)
     setSettingsMessage('已清空本地持久化文件。重启应用后会重新初始化示例数据。')
@@ -1327,18 +1392,18 @@ export function SettingsPage() {
 
   if (!isLocal && runtimeConfig.config.kind === 'server') {
     return (
-      <main className="h-full overflow-auto p-6">
-        <PageHeader title="设置" description="查看当前服务连接。切换到本地库只会退出当前会话视图，不会删除已保存的服务连接。" />
-        <section className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <PageFrame title="设置" description="服务连接与账号。切换本地库不会删除已保存连接。">
+        <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+          <ThemeSettingsCard className="lg:col-span-2" />
           <Card className="p-5">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <h2 className="text-sm font-semibold">服务端连接</h2>
-                <p className="mt-1 text-sm text-muted-foreground">当前工作空间的数据由所连接的 Deek PM 服务持久化。</p>
+                <h2 className="deek-page-section-title">服务端连接</h2>
+                <p className="mt-1.5 text-[length:var(--text-body)] text-muted-foreground">当前工作空间的数据由服务端持久化。</p>
               </div>
               <Badge>{source.label}</Badge>
             </div>
-            <div className="mt-5 grid gap-3 text-sm">
+            <div className="mt-5 grid gap-2.5">
               <InfoRow label="服务地址" value={runtimeConfig.config.baseUrl} />
               <InfoRow label="登录账号" value={runtimeConfig.config.accountEmail} />
               <InfoRow label="连接类型" value={runtimeConfig.config.deployment === 'cloud' ? '官方云服务' : '自部署服务'} />
@@ -1354,16 +1419,16 @@ export function SettingsPage() {
                 window.location.hash = '#/'
               }}
             >
-              <HardDrive size={15} />
+              <HardDrive size={16} strokeWidth={1.75} />
               切换到本地库（保留服务连接）
             </Button>
-            <p className="mt-2 text-xs leading-5 text-muted-foreground">
-              只退出当前服务会话视图，不会删除启动页上的已保存连接。需要彻底移除时，请在启动页删除对应连接卡片。
+            <p className="mt-2 text-[length:var(--text-callout)] leading-relaxed text-muted-foreground">
+              只退出当前服务会话视图，不会删除启动页上的已保存连接。
             </p>
           </Card>
           <Card className="p-5">
-            <h2 className="text-sm font-semibold">数据边界</h2>
-            <div className="mt-4 grid gap-3 text-sm">
+            <h2 className="deek-page-section-title">数据边界</h2>
+            <div className="mt-4 grid gap-2.5">
               <InfoRow label="业务数据" value="保存于服务端 PostgreSQL" />
               <InfoRow label="敏感条目" value="服务端 AES-256-GCM 加密" />
               <InfoRow label="本地库" value="保留在本机，不会自动上传" />
@@ -1373,16 +1438,16 @@ export function SettingsPage() {
           </Card>
           <Card className="p-5 lg:col-span-2">
             <form onSubmit={saveServicePassword}>
-              <h2 className="text-sm font-semibold">登录密码</h2>
-              <p className="mt-1 text-sm text-muted-foreground">修改当前个人服务账号的登录密码。</p>
+              <h2 className="deek-page-section-title">登录密码</h2>
+              <p className="mt-1.5 text-[length:var(--text-body)] text-muted-foreground">修改当前个人服务账号的登录密码。</p>
               <div className="mt-4 grid gap-4 md:grid-cols-3">
                 <TextInput label="当前密码" type="password" value={serviceCurrentPassword} onChange={(event) => setServiceCurrentPassword(event.target.value)} />
                 <TextInput label="新密码" type="password" value={serviceNewPassword} onChange={(event) => setServiceNewPassword(event.target.value)} />
                 <TextInput label="确认新密码" type="password" value={serviceNewPasswordConfirm} onChange={(event) => setServiceNewPasswordConfirm(event.target.value)} />
               </div>
-              {servicePasswordMessage && <p className="mt-3 text-sm text-muted-foreground">{servicePasswordMessage}</p>}
+              {servicePasswordMessage && <p className="mt-3 text-[length:var(--text-body)] text-muted-foreground">{servicePasswordMessage}</p>}
               <Button className="mt-4" type="submit" disabled={servicePasswordSaving || serviceCurrentPassword.length < 8 || serviceNewPassword.length < 10 || serviceNewPassword !== serviceNewPasswordConfirm}>
-                <ShieldCheck size={15} />
+                <ShieldCheck size={16} strokeWidth={1.75} />
                 {servicePasswordSaving ? '保存中…' : '修改密码'}
               </Button>
             </form>
@@ -1391,31 +1456,31 @@ export function SettingsPage() {
             <ServiceStorageSettingsCard baseUrl={runtimeConfig.config.baseUrl} accessToken={runtimeConfig.config.accessToken} />
           )}
         </section>
-      </main>
+      </PageFrame>
     )
   }
 
   return (
-    <main className="h-full overflow-auto p-6">
-      <PageHeader title="设置" description="查看本地运行环境、数据目录和当前存储模式。" />
-      {settingsMessage && <div className="mt-5 rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">{settingsMessage}</div>}
-      <section className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+    <PageFrame title="设置" description="本地运行环境、存储与主密码。">
+      {settingsMessage && <div className="mb-4 rounded-lg border bg-muted/30 p-3 text-[length:var(--text-body)] text-muted-foreground">{settingsMessage}</div>}
+      <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <ThemeSettingsCard className="lg:col-span-2" />
         <Card className="p-5">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <h2 className="text-sm font-semibold">本地数据管理</h2>
-              <p className="mt-1 text-sm text-muted-foreground">查看应用数据目录，或清空本机保存的 Deek PM 本地库。</p>
+              <h2 className="deek-page-section-title">本地数据管理</h2>
+              <p className="mt-1.5 text-[length:var(--text-body)] text-muted-foreground">查看应用数据目录，或重置本机库。</p>
             </div>
-            <Badge variant={isLocal ? 'default' : 'outline'}>{source.label}</Badge>
+            <Badge variant={isLocal ? 'default' : 'secondary'}>{source.label}</Badge>
           </div>
-          <div className="mt-5 grid gap-3 text-sm">
+          <div className="mt-5 grid gap-2.5">
             <InfoRow label="数据源" value={source.description} />
             <InfoRow label="存储位置" value={runtimeInfo?.localDatabasePath ?? runtimeInfo?.userDataPath ?? '浏览器本地存储'} />
             <InfoRow label="系统加密" value={runtimeInfo?.safeStorageAvailable ? '可用' : '不可用'} />
             <InfoRow label="自动备份" value={configuredAutoBackupDir || '未开启'} />
             {configuredAutoBackupError && <InfoRow label="备份错误" value={configuredAutoBackupError} />}
           </div>
-          <div className="mt-5 flex gap-2">
+          <div className="mt-5 flex flex-wrap gap-2">
             <Button
               variant="outline"
               disabled={!window.deek?.openUserDataDir}
@@ -1424,18 +1489,18 @@ export function SettingsPage() {
                 setSettingsMessage(result?.ok ? '已打开本地数据目录' : result?.error ?? '打开数据目录失败')
               }}
             >
-              <Folder size={15} />
+              <Folder size={16} strokeWidth={1.75} />
               打开数据目录
             </Button>
             <Button variant="destructive" onClick={() => setConfirmResetOpen(true)}>
-              <RotateCcw size={15} />
+              <RotateCcw size={16} strokeWidth={1.75} />
               重置本地库
             </Button>
           </div>
         </Card>
         <Card className="p-5">
-          <h2 className="text-sm font-semibold">本地模式状态</h2>
-          <div className="mt-4 grid gap-3 text-sm">
+          <h2 className="deek-page-section-title">本地模式状态</h2>
+          <div className="mt-4 grid gap-2.5">
             <InfoRow label="本地数据库" value="SQLCipher 已接入" />
             <InfoRow label="密钥保护" value={runtimeInfo?.safeStorageAvailable ? 'safeStorage 已启用' : '使用本机降级密钥文件'} />
             <InfoRow label="附件索引" value="保存本地路径引用" />
@@ -1446,12 +1511,12 @@ export function SettingsPage() {
         <Card className="p-5 lg:col-span-2">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <h2 className="text-sm font-semibold">本地主密码</h2>
-              <p className="mt-1 text-sm text-muted-foreground">主密码用于包裹本地数据库密钥，可选择是否记住本机解锁。</p>
+              <h2 className="deek-page-section-title">本地主密码</h2>
+              <p className="mt-1.5 text-[length:var(--text-body)] text-muted-foreground">主密码用于包裹本地数据库密钥。</p>
             </div>
-            <Badge variant={securityStatus?.configured ? 'default' : 'outline'}>{securityStatus?.configured ? '已启用' : '未启用'}</Badge>
+            <Badge variant={securityStatus?.configured ? 'default' : 'secondary'}>{securityStatus?.configured ? '已启用' : '未启用'}</Badge>
           </div>
-          <div className="mt-4 grid gap-3 text-sm md:grid-cols-3">
+          <div className="mt-4 grid gap-2.5 md:grid-cols-3">
             <InfoRow label="锁定状态" value={securityStatus?.locked ? '已锁定' : '已解锁'} />
             <InfoRow label="记住本机" value={securityStatus?.remembered ? '已开启' : '未开启'} />
             <InfoRow label="安全存储" value={securityStatus?.safeStorageAvailable ? '可用' : '不可用'} />
@@ -1465,11 +1530,11 @@ export function SettingsPage() {
                 setMasterPasswordOpen(true)
               }}
             >
-              <ShieldCheck size={15} />
+              <ShieldCheck size={16} strokeWidth={1.75} />
               {securityStatus?.configured ? '修改主密码' : '设置主密码'}
             </Button>
             <Button variant="outline" disabled={!securityStatus?.configured} onClick={() => void lockLocalDatabase()}>
-              <RotateCcw size={15} />
+              <RotateCcw size={16} strokeWidth={1.75} />
               锁定并取消记住
             </Button>
             <Button variant="ghost" disabled={!securityStatus?.configured} onClick={() => void disableMasterPassword()}>
@@ -1488,7 +1553,7 @@ export function SettingsPage() {
             <div className="mt-5 grid gap-4">
               <TextInput label="主密码" type="password" value={masterPassword} onChange={(event) => setMasterPassword(event.target.value)} />
               <TextInput label="确认主密码" type="password" value={masterPasswordConfirm} onChange={(event) => setMasterPasswordConfirm(event.target.value)} />
-              <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              <label className="flex items-center gap-2 text-[length:var(--text-body)] text-muted-foreground">
                 <input type="checkbox" checked={rememberMasterPassword} onChange={(event) => setRememberMasterPassword(event.target.checked)} />
                 记住本机解锁
               </label>
@@ -1512,28 +1577,40 @@ export function SettingsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </main>
+    </PageFrame>
   )
 }
 
-function LaunchMetric({ icon: Icon, label, value, helper }: { icon: LucideIcon; label: string; value: string; helper: string }) {
+function LaunchMetric({
+  icon: Icon,
+  label,
+  value,
+  helper,
+}: {
+  icon: LucideIcon
+  label: string
+  value: string
+  helper: string
+}) {
   return (
-    <div className="rounded-[var(--radius-panel)] border border-[var(--glass-border)] bg-[var(--glass-bg)] p-3 shadow-[var(--glass-highlight)] backdrop-blur-[var(--glass-blur)]">
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-xs text-muted-foreground">{label}</span>
-        <Icon size={15} className="text-muted-foreground" />
+    <div className="deek-metric-card deek-glass rounded-[var(--radius-panel)] border p-3">
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <span className="deek-app-icon deek-app-icon-neutral grid h-7 w-7 place-items-center text-white">
+          <Icon size={14} strokeWidth={1.75} />
+        </span>
+        <span className="text-xs font-medium">{label}</span>
       </div>
-      <strong className="mt-2 block truncate text-lg font-semibold">{value}</strong>
-      <span className="mt-1 block truncate text-xs text-muted-foreground">{helper}</span>
+      <div className="mt-2 text-lg font-semibold tracking-tight">{value}</div>
+      <div className="mt-1 truncate text-xs text-muted-foreground">{helper}</div>
     </div>
   )
 }
 
 function LaunchStep({ icon: Icon, title, text }: { icon: LucideIcon; title: string; text: string }) {
   return (
-    <div className="grid grid-cols-[36px_minmax(0,1fr)] gap-3 rounded-[var(--radius-panel)] border border-[var(--glass-border)] bg-[var(--glass-bg)] p-3 shadow-[var(--glass-highlight)] backdrop-blur-[var(--glass-blur)]">
-      <span className="grid h-9 w-9 place-items-center rounded-[var(--radius-control)] border border-[var(--glass-border)] bg-[var(--glass-bg-strong)] text-muted-foreground">
-        <Icon size={16} />
+    <div className="deek-list-row grid grid-cols-[36px_minmax(0,1fr)] gap-3 border-0 bg-transparent p-3">
+      <span className="deek-app-icon deek-app-icon-neutral grid h-9 w-9 place-items-center text-white">
+        <Icon size={16} strokeWidth={1.75} />
       </span>
       <span className="min-w-0">
         <strong className="block text-sm">{title}</strong>
@@ -1545,10 +1622,10 @@ function LaunchStep({ icon: Icon, title, text }: { icon: LucideIcon; title: stri
 
 function WorkspaceSection({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
   return (
-    <section className="mb-8">
-      <div className="mb-3">
-        <h2 className="text-sm font-medium text-muted-foreground">{title}</h2>
-        {description ? <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground/90">{description}</p> : null}
+    <section className="deek-section mb-8">
+      <div className="deek-section-header mb-3">
+        <h2 className="deek-section-title text-sm font-medium text-muted-foreground">{title}</h2>
+        {description ? <p className="deek-section-desc mt-1 max-w-3xl text-xs leading-5 text-muted-foreground/90">{description}</p> : null}
       </div>
       {children}
     </section>
@@ -1556,7 +1633,7 @@ function WorkspaceSection({ title, description, children }: { title: string; des
 }
 
 function WorkspaceGrid({ children }: { children: ReactNode }) {
-  return <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{children}</div>
+  return <div className="deek-card-grid grid gap-3 md:grid-cols-2 xl:grid-cols-3">{children}</div>
 }
 
 function WorkspaceCard({ workspace, featured = false }: { workspace: Workspace; featured?: boolean }) {
@@ -1568,19 +1645,19 @@ function WorkspaceCard({ workspace, featured = false }: { workspace: Workspace; 
       to={to}
       params={{ workspaceId: workspace.id }}
       className={cn(
-        'deek-glass flex min-h-28 items-center gap-4 rounded-[var(--radius-dialog)] border p-4 transition hover:-translate-y-0.5 hover:border-[var(--border-strong)]',
-        featured ? 'max-w-none p-5' : 'max-w-xl',
+        'deek-surface-card deek-glass flex min-h-28 items-center gap-4 rounded-[var(--radius-dialog)] border p-4 transition hover:-translate-y-0.5 hover:border-[var(--border-strong)]',
+        featured ? 'deek-surface-card-featured max-w-none p-5' : 'max-w-xl',
       )}
     >
-      <span className={cn('grid shrink-0 place-items-center rounded-lg text-white', featured ? 'h-14 w-14' : 'h-12 w-12', iconTone(workspace))}>
-        <Icon size={22} />
+      <span className={cn('grid shrink-0 place-items-center text-white', featured ? 'h-14 w-14' : 'h-12 w-12', iconTone(workspace))}>
+        <Icon size={featured ? 24 : 22} strokeWidth={1.75} />
       </span>
       <span className="min-w-0 flex-1">
         <strong className={cn('block truncate', featured && 'text-lg')}>{workspace.name}</strong>
         <span className={cn('mt-1 block text-sm text-muted-foreground', featured ? 'line-clamp-2' : 'truncate')}>{workspace.description}</span>
       </span>
-      <Badge variant="outline">{deploymentLabel(workspace)}</Badge>
-      <span className="inline-flex items-center gap-1 text-sm font-medium">
+      <Badge variant="outline" className="deek-card-meta shrink-0">{deploymentLabel(workspace)}</Badge>
+      <span className="deek-card-chevron inline-flex items-center gap-1 text-sm font-medium text-[var(--theme-accent,var(--foreground))]">
         {action}
         <ChevronRight size={15} />
       </span>
@@ -1601,10 +1678,15 @@ function SavedServiceCard({
 }) {
   const Icon = connection.deployment === 'cloud' ? Cloud : Server
   return (
-    <div className={cn('deek-glass flex min-h-28 items-center gap-4 rounded-[var(--radius-dialog)] border p-4', current && 'border-[var(--border-strong)] ring-1 ring-[var(--border-strong)]/30')}>
+    <div
+      className={cn(
+        'deek-surface-card deek-glass flex min-h-28 items-center gap-4 rounded-[var(--radius-dialog)] border p-4',
+        current && 'deek-surface-card-current border-[var(--border-strong)] ring-1 ring-[var(--border-strong)]/30',
+      )}
+    >
       <button type="button" className="flex min-w-0 flex-1 items-center gap-4 text-left" onClick={onOpen}>
-        <span className={cn('grid h-12 w-12 shrink-0 place-items-center rounded-lg text-white', connection.deployment === 'cloud' ? 'bg-sky-500' : 'bg-violet-500')}>
-          <Icon size={22} />
+        <span className={cn('grid h-12 w-12 shrink-0 place-items-center text-white', connectionIconTone(connection.deployment))}>
+          <Icon size={22} strokeWidth={1.75} />
         </span>
         <span className="min-w-0 flex-1">
           <strong className="block truncate">{connection.instanceName}</strong>
@@ -1646,15 +1728,15 @@ function TopBar({ workspace }: { workspace: Workspace }) {
     void navigate({ to: '/workspace/$workspaceId', params: { workspaceId: workspace.id } })
   }
   return (
-    <div className="flex h-full min-w-0 items-center gap-3 px-4">
-      <Link to="/" className="deek-nav-item grid h-8 w-8 place-items-center rounded-[var(--radius-control)]" aria-label="返回工作空间">
-        <ArrowLeft size={16} />
+    <div className="deek-topbar-inner flex h-full min-w-0 items-center gap-3 px-4 pl-[max(1rem,var(--titlebar-content-pad-left))] pr-[max(1rem,var(--titlebar-content-pad-right))]">
+      <Link to="/" className="deek-nav-item grid h-9 w-9 place-items-center rounded-[var(--radius-control)]" aria-label="返回工作空间">
+        <ArrowLeft size={17} strokeWidth={1.75} />
       </Link>
       <div className="flex min-w-0 items-center gap-2">
-        <Badge variant="outline">{workspaceLabel(workspace)}</Badge>
-        <strong className="truncate text-sm">{workspace.name}</strong>
+        <Badge variant="secondary">{workspaceLabel(workspace)}</Badge>
+        <strong className="truncate text-[length:var(--text-body)] font-semibold tracking-[-0.015em]">{workspace.name}</strong>
       </div>
-      <div className="ml-2 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+      <div className="ml-2 flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
         <TopBarLink workspaceId={workspace.id} active={!activeProjectId && pathname.endsWith(`/workspace/${workspace.id}`)}>
           项目
         </TopBarLink>
@@ -1664,7 +1746,7 @@ function TopBar({ workspace }: { workspace: Workspace }) {
             to="/workspace/$workspaceId/project/$projectId"
             params={{ workspaceId: workspace.id, projectId: tab.projectId }}
             className={cn(
-              'deek-nav-item inline-flex h-8 max-w-52 shrink-0 items-center gap-2 rounded-[var(--radius-control)] px-3 text-sm',
+              'deek-nav-item inline-flex h-9 max-w-56 shrink-0 items-center gap-2 rounded-[var(--radius-control)] px-3 text-[length:var(--text-body)]',
               activeProjectId === tab.projectId && 'deek-nav-item-active',
             )}
           >
@@ -1679,7 +1761,7 @@ function TopBar({ workspace }: { workspace: Workspace }) {
               }}
               aria-label="关闭项目标签"
             >
-              <X size={13} />
+              <X size={14} strokeWidth={1.75} />
             </button>
           </Link>
         ))}
@@ -1693,7 +1775,10 @@ function TopBarLink({ workspaceId, active, children }: { workspaceId: string; ac
     <Link
       to="/workspace/$workspaceId"
       params={{ workspaceId }}
-      className={cn('deek-nav-item inline-flex h-8 shrink-0 items-center rounded-[var(--radius-control)] px-3 text-sm', active && 'deek-nav-item-active')}
+      className={cn(
+        'deek-nav-item inline-flex h-9 shrink-0 items-center rounded-[var(--radius-control)] px-3 text-[length:var(--text-body)] font-medium',
+        active && 'deek-nav-item-active',
+      )}
     >
       {children}
     </Link>
@@ -1702,12 +1787,37 @@ function TopBarLink({ workspaceId, active, children }: { workspaceId: string; ac
 
 function Sidebar({ workspace }: { workspace: Workspace }) {
   return (
-    <nav className="flex h-full flex-col gap-1 p-3">
-      <SideLink workspaceId={workspace.id} to="/workspace/$workspaceId" icon={Folder} label="项目" />
-      <SideLink workspaceId={workspace.id} to="/workspace/$workspaceId/stats" icon={BarChart3} label="项目统计信息" />
-      <SideLink workspaceId={workspace.id} to="/workspace/$workspaceId/quick-entries" icon={Pin} label="快捷入口管理" />
-      {workspace.type === 'local' && <SideLink workspaceId={workspace.id} to="/workspace/$workspaceId/backup" icon={ShieldCheck} label="备份" />}
-      <SideLink workspaceId={workspace.id} to="/workspace/$workspaceId/settings" icon={Settings} label="设置" />
+    <nav className="deek-sidebar-nav flex h-full min-h-0 flex-col px-3 py-3">
+      <div className="deek-sidebar-brand mb-3 flex items-center gap-2.5 px-2 py-1">
+        <img src={deekLogoMark} alt="" className="h-8 w-8 rounded-[22%] object-cover shadow-[var(--shadow-control)]" />
+        <div className="min-w-0">
+          <div className="truncate text-[length:var(--text-body)] font-semibold tracking-[-0.02em]">Deek PM</div>
+          <div className="truncate text-[length:var(--text-caption)] text-muted-foreground">{workspace.name}</div>
+        </div>
+      </div>
+
+      <div className="deek-sidebar-caption mb-1 px-2.5 text-[length:var(--text-caption)] font-semibold tracking-[0.01em] text-muted-foreground">
+        资料库
+      </div>
+      <div className="grid gap-0.5">
+        <SideLink workspaceId={workspace.id} to="/workspace/$workspaceId" icon={Folder} label="项目" />
+        <SideLink workspaceId={workspace.id} to="/workspace/$workspaceId/stats" icon={BarChart3} label="统计" />
+        <SideLink workspaceId={workspace.id} to="/workspace/$workspaceId/quick-entries" icon={Pin} label="快捷入口" />
+      </div>
+
+      <div className="deek-sidebar-caption mb-1 mt-4 px-2.5 text-[length:var(--text-caption)] font-semibold tracking-[0.01em] text-muted-foreground">
+        系统
+      </div>
+      <div className="grid gap-0.5">
+        {workspace.type === 'local' && <SideLink workspaceId={workspace.id} to="/workspace/$workspaceId/backup" icon={ShieldCheck} label="备份与迁移" />}
+        <SideLink workspaceId={workspace.id} to="/workspace/$workspaceId/settings" icon={Settings} label="设置" />
+      </div>
+
+      <div className="mt-auto border-t border-[var(--sidebar-border)] px-2 pt-3">
+        <div className="rounded-[var(--radius-control)] bg-[var(--nav-item-hover-bg)] px-2.5 py-2 text-[length:var(--text-caption)] leading-relaxed text-muted-foreground">
+          {workspace.type === 'local' ? '本地库 · 仅本机' : '服务库 · 当前账号'}
+        </div>
+      </div>
     </nav>
   )
 }
@@ -1724,10 +1834,13 @@ function SideLink(props: {
       to={props.to}
       params={{ workspaceId: props.workspaceId }}
       activeProps={{ className: 'deek-nav-item-active' }}
-      className={cn(buttonVariants({ variant: 'ghost', size: 'lg' }), 'deek-nav-item justify-start px-3 shadow-none')}
+      className={cn(
+        'deek-nav-item deek-sidebar-link flex h-10 items-center gap-2.5 rounded-[var(--radius-control)] px-2.5 text-[length:var(--text-body)] font-medium tracking-[-0.01em] text-muted-foreground transition-colors',
+        'hover:bg-[var(--nav-item-hover-bg)] hover:text-foreground',
+      )}
     >
-      <Icon size={18} />
-      {props.label}
+      <Icon size={18} strokeWidth={1.75} className="shrink-0 opacity-90" />
+      <span className="min-w-0 truncate">{props.label}</span>
     </Link>
   )
 }
@@ -1874,15 +1987,15 @@ function getErrorMessage(error: unknown, fallback: string) {
 
 function ProjectStatCard({ icon: Icon, label, value, helper }: { icon: LucideIcon; label: string; value: string; helper: string }) {
   return (
-    <div className="deek-glass rounded-[var(--radius-dialog)] border p-4">
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-sm text-muted-foreground">{label}</span>
-        <span className="grid h-8 w-8 place-items-center rounded-[var(--radius-control)] border border-[var(--glass-border)] bg-[var(--glass-bg)] text-muted-foreground">
-          <Icon size={16} />
+    <div className="deek-metric-card deek-glass rounded-[var(--radius-card)] border p-3.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[length:var(--text-caption)] font-medium text-muted-foreground">{label}</span>
+        <span className="deek-app-icon deek-app-icon-neutral grid h-7 w-7 place-items-center text-white">
+          <Icon size={14} strokeWidth={1.75} />
         </span>
       </div>
-      <strong className="mt-3 block truncate text-2xl font-semibold">{value}</strong>
-      <span className="mt-1 block truncate text-xs text-muted-foreground">{helper}</span>
+      <strong className="mt-2 block truncate text-[length:var(--text-title1)] font-semibold tracking-[-0.03em]">{value}</strong>
+      <span className="mt-0.5 block truncate text-[length:var(--text-caption)] text-muted-foreground">{helper}</span>
     </div>
   )
 }
@@ -1943,8 +2056,10 @@ function ProjectCard({ project, workspaceId, viewMode }: { project: Project; wor
       exit={{ opacity: 0, y: -6, scale: 0.99 }}
       transition={{ duration: 0.2, ease: standardEase }}
       className={cn(
-        'deek-glass group relative overflow-hidden rounded-[var(--radius-dialog)] border transition-all hover:border-[var(--border-strong)] focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20',
-        isList ? 'grid grid-cols-[minmax(0,1fr)_44px] items-center rounded-[var(--radius-panel)]' : 'hover:-translate-y-0.5',
+        'deek-project-card group relative overflow-hidden transition-colors focus-within:bg-[var(--nav-item-hover-bg)]',
+        isList
+          ? 'deek-project-card-list grid grid-cols-[minmax(0,1fr)_44px] items-center border-0 border-b border-[var(--card-border)] last:border-b-0'
+          : 'deek-surface-card deek-glass rounded-[var(--radius-dialog)] border hover:border-[var(--border-strong)]',
       )}
     >
       <button
@@ -1952,71 +2067,76 @@ function ProjectCard({ project, workspaceId, viewMode }: { project: Project; wor
         onClick={openProject}
         className={cn(
           'w-full appearance-none border-0 bg-transparent text-left text-inherit',
-          isList ? 'grid min-h-16 grid-cols-[40px_minmax(160px,1fr)_84px_148px] items-center gap-3 px-4 py-3 pr-2' : 'flex min-h-52 flex-col p-5',
+          isList
+            ? 'grid min-h-[3.75rem] grid-cols-[2.5rem_minmax(10rem,1fr)_5.5rem_8.5rem] items-center gap-3 px-4 py-3 pr-1'
+            : 'flex min-h-[12.5rem] flex-col p-5',
         )}
       >
-        <span className={cn('grid h-10 w-10 shrink-0 place-items-center rounded-md ring-1 transition group-hover:scale-105', tone.panel)}>
-          <Folder size={18} className={tone.icon} />
+        <span className={cn('grid shrink-0 place-items-center transition', isList ? 'h-10 w-10 rounded-[0.65rem]' : 'h-11 w-11 rounded-[0.7rem]', tone.panel)}>
+          <Folder size={isList ? 18 : 20} strokeWidth={1.75} className={tone.icon} />
         </span>
-        <div className={cn('min-w-0 flex-1', !isList && 'mt-4')}>
-          <div className={cn('flex min-w-0 items-center gap-2', !isList && 'pr-10')}>
-            <strong className={cn('truncate font-semibold', isList ? 'text-sm' : 'text-base')}>{project.name}</strong>
+        <div className={cn('min-w-0 flex-1', !isList && 'mt-3.5')}>
+          <div className={cn('flex min-w-0 items-center gap-2', !isList && 'pr-9')}>
+            <strong className={cn('truncate font-semibold tracking-[-0.02em]', isList ? 'text-[length:var(--text-body)]' : 'text-[length:var(--text-title3)]')}>
+              {project.name}
+            </strong>
             <span className={cn('size-2 shrink-0 rounded-full', tone.dot)} />
           </div>
-          <div className={cn('flex min-w-0 items-center gap-2 text-xs text-muted-foreground', isList ? 'mt-1' : 'mt-2 flex-wrap')}>
-            <Badge variant="outline" className="max-w-36 truncate bg-background/80">{project.tag}</Badge>
-            {isList && <span className="truncate text-sm text-muted-foreground">{project.description}</span>}
+          <div className={cn('flex min-w-0 items-center gap-2 text-muted-foreground', isList ? 'mt-1' : 'mt-2 flex-wrap')}>
+            {project.tag ? <Badge variant="tag" className="max-w-40 truncate">{project.tag}</Badge> : null}
+            {isList && (
+              <span className="truncate text-[length:var(--text-callout)]">
+                {project.description || '暂无说明'}
+              </span>
+            )}
           </div>
         </div>
         {isList && (
-          <span className="grid gap-1 text-sm">
-            <span className="inline-flex items-center gap-1.5 font-medium">
-              <Database size={14} className={tone.icon} />
-              {project.entryCount} 条
-            </span>
-            <span className="text-xs text-muted-foreground">资料</span>
+          <span className="text-[length:var(--text-body)] font-semibold tabular-nums text-foreground">
+            {project.entryCount}
+            <span className="ml-1 text-[length:var(--text-caption)] font-normal text-muted-foreground">条</span>
           </span>
         )}
         {isList && (
-          <span className="grid justify-items-end gap-1 text-sm text-muted-foreground">
-            <span className="inline-flex items-center gap-1 whitespace-nowrap">
-              <CalendarClock size={13} />
+          <span className="grid justify-items-end gap-1 text-[length:var(--text-callout)] text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+              <CalendarClock size={14} strokeWidth={1.75} />
               {project.updatedAtText}
             </span>
-            <span className="inline-flex items-center gap-1 text-foreground">
-              进入
-              <ChevronRight size={14} />
+            <span className="inline-flex items-center gap-0.5 font-medium text-[var(--theme-accent)]">
+              打开
+              <ChevronRight size={15} strokeWidth={1.75} />
             </span>
           </span>
         )}
-        {!isList && <p className="mt-4 line-clamp-2 min-h-12 text-sm leading-6 text-muted-foreground">{project.description}</p>}
         {!isList && (
-          <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-2 pt-5 text-sm text-muted-foreground">
-            <span className="inline-flex items-center gap-1.5">
-              <Database size={14} />
-              <strong className="font-medium text-foreground">{project.entryCount} 条</strong>
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <CalendarClock size={14} />
-              <strong className="font-medium text-foreground">{project.updatedAtText}</strong>
-            </span>
-          </div>
+          <p className="mt-3 line-clamp-2 min-h-11 text-[length:var(--text-body)] leading-relaxed text-muted-foreground">
+            {project.description || '暂无说明'}
+          </p>
         )}
         {!isList && (
-          <footer className="mt-4 flex items-center justify-between border-t pt-3 text-sm">
-            <span className="text-xs text-muted-foreground">项目资料空间</span>
-            <span className="inline-flex items-center gap-1 font-medium transition group-hover:translate-x-0.5">
-              进入项目
-              <ChevronRight size={15} />
+          <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-1.5 pt-4 text-[length:var(--text-callout)] text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5">
+              <Database size={15} strokeWidth={1.75} />
+              <strong className="font-semibold text-foreground">{project.entryCount}</strong>
+              条资料
             </span>
-          </footer>
+            <span className="inline-flex items-center gap-1.5">
+              <CalendarClock size={15} strokeWidth={1.75} />
+              {project.updatedAtText}
+            </span>
+            <span className="ml-auto inline-flex items-center gap-0.5 font-medium text-[var(--theme-accent)]">
+              打开
+              <ChevronRight size={16} strokeWidth={1.75} />
+            </span>
+          </div>
         )}
       </button>
       <div className={cn('absolute right-3 top-4 opacity-80 transition group-hover:opacity-100', isList && 'static grid h-full place-items-center pr-2')}>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button size="icon" variant="ghost" aria-label={`${project.name} 更多操作`}>
-              <MoreHorizontal size={16} />
+              <MoreHorizontal size={17} strokeWidth={1.75} />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-36">
@@ -2113,9 +2233,9 @@ function ProjectForm({ value, workspace, onChange }: { value: ProjectFormValues;
 
 function InfoRow({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="grid grid-cols-[112px_minmax(0,1fr)] gap-3 rounded-md border bg-background px-3 py-2">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="min-w-0 break-words text-foreground">{value}</span>
+    <div className="deek-info-row grid grid-cols-[6.5rem_minmax(0,1fr)] items-start gap-3 rounded-md border bg-background px-3 py-2">
+      <span className="pt-px text-[length:var(--text-caption)] font-medium text-muted-foreground">{label}</span>
+      <span className="min-w-0 break-words text-[length:var(--text-callout)] leading-snug text-foreground">{value}</span>
     </div>
   )
 }

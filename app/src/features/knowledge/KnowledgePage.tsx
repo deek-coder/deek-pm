@@ -331,7 +331,8 @@ export function KnowledgePage() {
   }
   return (
     <main
-      className={cn('deek-app-bg grid h-full min-h-0', activeView === 'knowledge' ? 'grid-cols-[84px_360px_minmax(0,1fr)]' : 'grid-cols-[84px_minmax(0,1fr)]')}
+      className="deek-knowledge-shell grid h-full min-h-0 p-0 m-0"
+      data-pane={activeView === 'knowledge' ? 'knowledge' : 'settings'}
       onClick={() => {
         setTreeMenu(null)
         setIconPicker(null)
@@ -340,29 +341,27 @@ export function KnowledgePage() {
       <ProjectSectionMenu projectName={project.name} activeView={activeView} onSelectView={setActiveView} />
       <LazyMotion features={domAnimation}>
       {activeView === 'knowledge' && (
-      <m.aside layout className="flex min-h-0 flex-col border-r bg-[var(--panel-bg)] backdrop-blur-[var(--glass-blur)]" transition={{ duration: 0.18, ease: standardEase }}>
-        <div className="border-b px-4 pb-3 pt-4">
-          <div className="mb-4 flex items-center justify-between">
+      <m.aside layout className="deek-knowledge-tree flex min-h-0 flex-col" transition={{ duration: 0.18, ease: standardEase }}>
+        <div className="deek-knowledge-tree-header border-b px-3.5 pb-3 pt-3.5">
+          <div className="mb-3 flex items-center justify-between gap-2">
             <div className="min-w-0">
-              <strong className="block truncate text-[15px] font-semibold">智库</strong>
-              <span className="mt-1 block truncate text-xs text-muted-foreground">{project.name}</span>
+              <strong className="block truncate text-[length:var(--text-title3)] font-semibold tracking-[-0.02em]">智库</strong>
+              <span className="mt-0.5 block truncate text-[length:var(--text-callout)] text-muted-foreground">{project.name}</span>
             </div>
             <Button size="icon" variant="ghost" aria-label="新建页面" disabled={createEntryMutation.isPending} onClick={() => createPage()}>
-              <Plus size={16} />
+              <Plus size={17} strokeWidth={1.75} />
             </Button>
           </div>
-          <label className="flex h-9 items-center gap-2 rounded-md border bg-muted/30 px-3 text-muted-foreground shadow-inner shadow-black/[0.02]">
-            <Search size={16} />
-            <input className="w-full border-0 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/70" placeholder="搜索标题、正文、链接" value={searchText} onChange={(event) => setSearchText(event.target.value)} />
+          <label className="deek-knowledge-search flex h-[var(--control-h)] items-center gap-2 rounded-[var(--radius-control)] px-3 text-muted-foreground">
+            <Search size={16} strokeWidth={1.75} />
+            <input className="w-full border-0 bg-transparent text-[length:var(--text-body)] text-foreground outline-none placeholder:text-muted-foreground/70" placeholder="搜索页面" value={searchText} onChange={(event) => setSearchText(event.target.value)} />
           </label>
         </div>
-        <div className="flex items-center justify-between px-4 py-2 text-xs text-muted-foreground">
-          <span>我的页面</span>
-          <div className="flex gap-1">
-            <Button size="icon-xs" variant="ghost" aria-label="新建页面" disabled={createEntryMutation.isPending} onClick={() => createPage()}>
-              <FilePlus2 size={13} />
-            </Button>
-          </div>
+        <div className="flex items-center justify-between px-3.5 py-2 text-[length:var(--text-caption)] font-semibold text-muted-foreground">
+          <span>页面</span>
+          <Button size="icon-sm" variant="ghost" aria-label="新建页面" disabled={createEntryMutation.isPending} onClick={() => createPage()}>
+            <FilePlus2 size={15} strokeWidth={1.75} />
+          </Button>
         </div>
         <div className="min-h-0 flex-1 overflow-auto px-2 pb-4">
           {visiblePageTree.map((page) => (
@@ -382,7 +381,7 @@ export function KnowledgePage() {
           ))}
           <AnimatePresence>
             {visiblePageTree.length === 0 && (
-              <m.div {...pageMotion} className="rounded-md border border-dashed bg-[var(--surface-elevated)] p-5 text-sm text-muted-foreground">
+              <m.div {...pageMotion} className="rounded-[var(--radius-control)] border border-dashed bg-[var(--surface-elevated)] p-5 text-[length:var(--text-body)] text-muted-foreground">
                 暂无页面
               </m.div>
             )}
@@ -390,8 +389,8 @@ export function KnowledgePage() {
         </div>
       </m.aside>
       )}
-      <section className="h-full max-h-full min-h-0 overflow-y-auto overscroll-contain bg-[var(--surface)] backdrop-blur-[var(--glass-blur)]">
-        <div className="mx-auto w-full max-w-6xl py-6 pl-16 pr-8">
+      <section className="deek-knowledge-editor h-full max-h-full min-h-0 overflow-y-auto overscroll-contain">
+        <div className="deek-knowledge-editor-inner w-full max-w-none">
           {copyMessage && <div className="mb-4 rounded-md border bg-[var(--surface-elevated)] px-4 py-3 text-sm text-muted-foreground shadow-[var(--shadow-control)]">{copyMessage}</div>}
           <AnimatePresence mode="wait">
           {activeView === 'settings' && (
@@ -519,8 +518,11 @@ function ProjectSectionMenu({ projectName, activeView, onSelectView }: { project
     { value: 'settings', label: '设置', icon: Settings },
   ]
   return (
-    <aside className="flex min-h-0 flex-col items-center border-r border-[var(--sidebar-border)] bg-[var(--sidebar-bg)] px-2 py-4 text-foreground shadow-[var(--glass-highlight)] backdrop-blur-[var(--glass-blur)]">
-      <div className="mb-5 grid h-10 w-10 place-items-center rounded-[var(--radius-control)] border border-[var(--glass-border)] bg-[var(--glass-bg-strong)] text-sm font-semibold text-foreground shadow-[var(--shadow-control)]" title={projectName}>
+    <aside className="deek-knowledge-rail flex min-h-0 flex-col items-center px-2.5 py-4 text-foreground">
+      <div
+        className="mb-6 grid h-11 w-11 place-items-center rounded-[0.7rem] bg-[var(--nav-item-active-bg)] text-[length:var(--text-body)] font-semibold text-foreground"
+        title={projectName}
+      >
         {projectInitial}
       </div>
       <nav className="grid gap-2">
@@ -532,15 +534,14 @@ function ProjectSectionMenu({ projectName, activeView, onSelectView }: { project
               key={item.value}
               type="button"
               className={cn(
-                'deek-nav-item relative grid h-10 w-10 place-items-center rounded-[var(--radius-control)]',
+                'deek-nav-item relative grid h-11 w-11 place-items-center rounded-[0.7rem]',
                 active && 'deek-nav-item-active',
               )}
               title={item.label}
               aria-label={item.label}
               onClick={() => onSelectView(item.value)}
             >
-              <Icon size={16} />
-              {active && <span className="absolute -right-2 h-5 w-0.5 rounded-full bg-primary" />}
+              <Icon size={18} strokeWidth={1.75} />
             </button>
           )
         })}
@@ -568,8 +569,8 @@ function TreePage(props: {
     <m.section layout className="mb-0.5" transition={{ duration: 0.18, ease: standardEase }}>
       <div
         className={cn(
-          'group/tree-row grid h-8 grid-cols-[minmax(0,1fr)_28px_28px] items-center gap-0 rounded-md transition hover:bg-muted/60',
-          active && 'bg-rose-50 text-rose-600 hover:bg-rose-50',
+          'deek-tree-row group/tree-row grid h-10 grid-cols-[minmax(0,1fr)_32px_32px] items-center gap-0 rounded-[0.55rem] transition',
+          active ? 'deek-tree-row-active' : 'hover:bg-muted/50',
         )}
         style={{ paddingLeft: props.depth * 14 }}
         onContextMenu={(event) => {
@@ -582,8 +583,8 @@ function TreePage(props: {
         <button
           type="button"
           className={cn(
-            'grid h-8 min-w-0 grid-cols-[16px_22px_minmax(0,1fr)] items-center gap-2 rounded px-2 text-left text-sm leading-5 text-muted-foreground hover:text-foreground',
-            active && 'text-rose-600',
+            'grid h-10 min-w-0 grid-cols-[18px_24px_minmax(0,1fr)] items-center gap-2 rounded px-2 text-left text-[length:var(--text-body)] leading-5',
+            active ? 'font-medium' : 'text-muted-foreground hover:text-foreground',
           )}
           onClick={() => {
             props.onSelectEntry(props.page.id)
@@ -1263,9 +1264,10 @@ function EditableDocument(props: {
   const editorModeButton = (targetMode: EditorMode, label: string, icon: ReactNode) => (
     <button
       type="button"
+      data-active={editorMode === targetMode}
       className={cn(
-        'inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-control)] px-2.5 text-xs text-muted-foreground transition hover:bg-[var(--nav-item-hover-bg)] hover:text-foreground',
-        editorMode === targetMode && 'bg-[var(--primary)] text-primary-foreground shadow-[var(--shadow-control)] hover:bg-[var(--primary)] hover:text-primary-foreground',
+        'deek-segmented-item inline-flex h-8 items-center gap-1.5 px-2.5 text-[length:var(--text-caption)] font-medium transition',
+        editorMode !== targetMode && 'text-muted-foreground hover:text-foreground',
       )}
       onClick={() => setEditorMode(targetMode)}
     >
@@ -1275,28 +1277,28 @@ function EditableDocument(props: {
   )
 
   return (
-    <article className="min-h-[calc(100dvh-7rem)] w-full pb-16">
-      <div className="sticky top-0 z-20 bg-[var(--surface-elevated)] py-2 backdrop-blur">
+    <article className="deek-knowledge-doc min-h-[calc(100dvh-7rem)] w-full pb-16">
+      <div className="deek-knowledge-doc-toolbar sticky top-0 z-20 -mx-2 px-2 py-2.5">
         <div className="relative flex items-center justify-between gap-3">
-          <div className="min-w-0 text-xs text-muted-foreground">
+          <div className="min-w-0 text-[length:var(--text-callout)] text-muted-foreground">
             {props.saveMessage || ' '}
           </div>
           <div className="flex items-center gap-2">
-            <div className="inline-flex items-center gap-1 rounded-lg border border-[var(--glass-border)] bg-[var(--glass-bg)] p-1 shadow-[var(--glass-shadow-soft)] backdrop-blur-[var(--glass-blur)]">
-              {editorModeButton('visual', '富文本', <FileText size={13} />)}
-              {editorModeButton('source', '源码', <FileCode2 size={13} />)}
-              {editorModeButton('code', '代码', <Code2 size={13} />)}
+            <div className="deek-segmented inline-flex items-center gap-0.5">
+              {editorModeButton('visual', '富文本', <FileText size={14} strokeWidth={1.75} />)}
+              {editorModeButton('source', '源码', <FileCode2 size={14} strokeWidth={1.75} />)}
+              {editorModeButton('code', '代码', <Code2 size={14} strokeWidth={1.75} />)}
             </div>
             <Button size="sm" variant={utilityPanel === 'children' ? 'secondary' : 'ghost'} onClick={() => toggleUtilityPanel('children')}>
-              <FileText size={15} />
+              <FileText size={15} strokeWidth={1.75} />
               子页面 {props.childPages.length}
             </Button>
             <Button size="sm" variant={utilityPanel === 'attachments' ? 'secondary' : 'ghost'} onClick={() => toggleUtilityPanel('attachments')}>
-              <Paperclip size={15} />
+              <Paperclip size={15} strokeWidth={1.75} />
               附件
             </Button>
             <Button size="icon" variant="ghost" aria-label="删除页面" onClick={props.onDelete}>
-              <Trash2 size={16} />
+              <Trash2 size={16} strokeWidth={1.75} />
             </Button>
           </div>
           <AnimatePresence>
@@ -1307,7 +1309,7 @@ function EditableDocument(props: {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -4, scale: 0.98 }}
                 transition={{ duration: 0.14, ease: standardEase }}
-                className="absolute right-0 top-[calc(100%+0.5rem)] z-30 max-h-[min(34rem,72dvh)] w-[min(44rem,calc(100vw-22rem))] overflow-auto rounded-lg border bg-[var(--surface-elevated)] p-4 shadow-[var(--shadow-popover)]"
+                className="absolute right-0 top-[calc(100%+0.5rem)] z-30 max-h-[min(34rem,72dvh)] w-[min(44rem,calc(100vw-22rem))] overflow-auto rounded-[var(--radius-dialog)] border border-[var(--card-border)] bg-[var(--dialog-bg)] p-4 shadow-[var(--shadow-popover)]"
               >
                 {utilityPanel === 'children' ? (
                   <ChildPagesPanel childPages={props.childPages} onOpenPage={props.onOpenPage} onCreateChildPage={props.onCreateChildPage} />

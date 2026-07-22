@@ -16,4 +16,9 @@ export default defineConfig({
     host: '127.0.0.1',
     port: 5179,
   },
+  build: {
+    // C++/comments are Shiki grammars loaded only when that code-block language is selected.
+    // Route-level application chunks remain below the default 500 kB threshold.
+    chunkSizeWarningLimit: 900,
+  },
 })

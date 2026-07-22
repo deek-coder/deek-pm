@@ -4,15 +4,18 @@ import { router } from './router'
 import { RepositoryProvider } from './repositories/RepositoryProvider'
 import { RuntimeConfigProvider } from './runtimeConfig'
 import { useRuntimeConfig } from './runtimeConfigContext'
+import { ThemeProvider } from './theme/ThemeProvider'
 
 const queryClient = new QueryClient()
 
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <RuntimeConfigProvider>
-        <ConfiguredApp />
-      </RuntimeConfigProvider>
+      <ThemeProvider>
+        <RuntimeConfigProvider>
+          <ConfiguredApp />
+        </RuntimeConfigProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   )
 }
