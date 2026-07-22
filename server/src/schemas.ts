@@ -100,6 +100,11 @@ export const storageSettingsSchema = z.discriminatedUnion('driver', [
   }),
 ])
 
+export const setupInstanceSchema = registerSchema.extend({
+  setupToken: z.string().min(32).max(500),
+  storage: storageSettingsSchema,
+})
+
 export const assetUploadQuerySchema = z.object({
   workspaceId: z.uuid(),
   kind: z.enum(['image', 'attachment']),

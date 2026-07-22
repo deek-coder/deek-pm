@@ -11,15 +11,15 @@ test('all PostgreSQL migrations apply in order and enforce asset/hierarchy invar
   const db = new PGlite()
   try {
     const files = (await readdir(migrationsDirectory)).filter((name) => name.endsWith('.sql')).sort()
-    assert.deepEqual(files.slice(-2), ['006_asset_consistency.sql', '007_hierarchy_integrity.sql'])
+    assert.deepEqual(files.slice(-3), ['006_asset_consistency.sql', '007_hierarchy_integrity.sql', '008_instance_setup.sql'])
     for (const file of files) await db.exec(await readFile(path.join(migrationsDirectory, file), 'utf8'))
 
     const tables = await db.query<{ table_name: string }>(
       `SELECT table_name FROM information_schema.tables
-       WHERE table_schema = 'public' AND table_name IN ('asset_references', 'asset_cleanup_jobs')
+       WHERE table_schema = 'public' AND table_name IN ('asset_references', 'asset_cleanup_jobs', 'instance_settings')
        ORDER BY table_name`,
     )
-    assert.deepEqual(tables.rows.map((row) => row.table_name), ['asset_cleanup_jobs', 'asset_references'])
+    assert.deepEqual(tables.rows.map((row) => row.table_name), ['asset_cleanup_jobs', 'asset_references', 'instance_settings'])
 
     const workspace = '00000000-0000-4000-8000-000000000001'
     const user = '00000000-0000-4000-8000-000000000002'

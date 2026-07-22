@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto'
 import path from 'node:path'
 import { Transform } from 'node:stream'
 import bcrypt from 'bcryptjs'
@@ -26,6 +26,7 @@ import {
   storageSettingsSchema,
   assetUploadQuerySchema,
   searchQuerySchema,
+  setupInstanceSchema,
   changePasswordSchema,
 } from './schemas.js'
 import { createAssetStorage, type StorageManager, type StorageSettings } from './storage.js'
@@ -236,6 +237,40 @@ function isSameStorageLocation(current: StorageSettings, next: StorageSettings) 
   return false
 }
 
+function setupTokenMatches(expected: string, actual: string) {
+  const expectedHash = createHash('sha256').update(expected, 'utf8').digest()
+  const actualHash = createHash('sha256').update(actual, 'utf8').digest()
+  return timingSafeEqual(expectedHash, actualHash)
+}
+
+async function getInstanceSetupStatus(pool: DatabasePool, config: AppConfig) {
+  const result = await pool.query<{ initialized: boolean; storage_configured: boolean }>(`
+    SELECT
+      EXISTS (SELECT 1 FROM users) AS initialized,
+      EXISTS (SELECT 1 FROM storage_settings WHERE id = 1) AS storage_configured
+  `)
+  const state = result.rows[0] ?? { initialized: false, storage_configured: false }
+  return {
+    initialized: state.initialized,
+    storageConfigured: state.storage_configured,
+    setupAvailable: config.DEPLOYMENT_MODE === 'selfhost' && Boolean(config.SETUP_TOKEN),
+    setupTokenRequired: true,
+  }
+}
+
+function storageSettingsParameters(settings: StorageSettings, encryptedCredentials: string | null, updatedBy: string) {
+  return [
+    settings.driver,
+    settings.driver === 'filesystem' ? settings.filesystemPath : null,
+    settings.driver === 's3' ? settings.endpoint : null,
+    settings.driver === 's3' ? settings.region : null,
+    settings.driver === 's3' ? settings.bucket : null,
+    settings.driver === 's3' ? settings.forcePathStyle : true,
+    encryptedCredentials,
+    updatedBy,
+  ]
+}
+
 export async function registerRoutes(app: FastifyInstance, pool: DatabasePool, config: AppConfig, storageManager: StorageManager) {
   app.get('/health', async () => {
     await pool.query('SELECT 1')
@@ -243,12 +278,85 @@ export async function registerRoutes(app: FastifyInstance, pool: DatabasePool, c
   })
 
   app.register(async (api) => {
-    api.get('/instance', async () => ({
-      name: config.INSTANCE_NAME,
-      deployment: config.DEPLOYMENT_MODE,
-      version: '0.1.0',
-      registrationEnabled: config.ALLOW_REGISTRATION,
-    }))
+    api.get('/instance', async () => {
+      const setup = await getInstanceSetupStatus(pool, config)
+      return {
+        name: config.INSTANCE_NAME,
+        deployment: config.DEPLOYMENT_MODE,
+        version: '0.1.0',
+        registrationEnabled: setup.initialized && config.ALLOW_REGISTRATION,
+        ...setup,
+      }
+    })
+
+    api.get('/setup/status', async () => getInstanceSetupStatus(pool, config))
+
+    api.post('/setup', async (request, reply) => {
+      if (config.DEPLOYMENT_MODE !== 'selfhost') throw app.httpErrors.forbidden('官方托管实例不允许通过公开接口初始化')
+      if (!config.SETUP_TOKEN) throw Object.assign(new Error('服务端未配置 SETUP_TOKEN，无法执行首次初始化'), { statusCode: 503 })
+      const input = setupInstanceSchema.parse(request.body)
+      if (!setupTokenMatches(config.SETUP_TOKEN, input.setupToken)) throw app.httpErrors.unauthorized('初始化令牌不正确')
+
+      const storage = await resolveStorageSettings(storageManager, input.storage)
+      await createAssetStorage(storage).verifyWritable()
+      const passwordHash = await bcrypt.hash(input.password, 12)
+      const credentialsEncrypted = storage.driver === 's3'
+        ? encryptJson(storage.credentials, config.DATA_ENCRYPTION_KEY)
+        : null
+      const client = await pool.connect()
+      const userId = randomUUID()
+      const workspaceId = randomUUID()
+      try {
+        await client.query('BEGIN')
+        await client.query("SELECT pg_advisory_xact_lock(hashtext('deek-pm-instance-setup'))")
+        const existing = await client.query<{ initialized: boolean }>('SELECT EXISTS (SELECT 1 FROM users) AS initialized')
+        if (existing.rows[0]?.initialized) throw app.httpErrors.conflict('服务实例已经完成初始化')
+        await client.query(
+          'INSERT INTO users (id, email, name, password_hash, is_instance_admin) VALUES ($1, $2, $3, $4, true)',
+          [userId, input.email, input.name, passwordHash],
+        )
+        await client.query('INSERT INTO workspaces (id, name, description) VALUES ($1, $2, $3)', [workspaceId, input.workspaceName, 'Deek PM workspace'])
+        await client.query(
+          `INSERT INTO workspace_members (id, workspace_id, user_id, email, name, role, status)
+           VALUES ($1, $2, $3, $4, $5, 'owner', 'joined')`,
+          [randomUUID(), workspaceId, userId, input.email, input.name],
+        )
+        await client.query(
+          `INSERT INTO storage_settings (
+             id, driver, filesystem_path, s3_endpoint, s3_region, s3_bucket,
+             s3_force_path_style, credentials_encrypted, updated_by, updated_at
+           ) VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, now())
+           ON CONFLICT (id) DO UPDATE SET
+             driver = EXCLUDED.driver,
+             filesystem_path = EXCLUDED.filesystem_path,
+             s3_endpoint = EXCLUDED.s3_endpoint,
+             s3_region = EXCLUDED.s3_region,
+             s3_bucket = EXCLUDED.s3_bucket,
+             s3_force_path_style = EXCLUDED.s3_force_path_style,
+             credentials_encrypted = EXCLUDED.credentials_encrypted,
+             updated_by = EXCLUDED.updated_by,
+             updated_at = now()`,
+          storageSettingsParameters(storage, credentialsEncrypted, userId),
+        )
+        await client.query(
+          `INSERT INTO instance_settings (id, initialized_at, initialized_by, updated_at)
+           VALUES (1, now(), $1, now())
+           ON CONFLICT (id) DO UPDATE SET initialized_at = now(), initialized_by = $1, updated_at = now()`,
+          [userId],
+        )
+        await client.query('COMMIT')
+      } catch (error: unknown) {
+        await client.query('ROLLBACK')
+        if (typeof error === 'object' && error && 'code' in error && error.code === '23505') {
+          throw app.httpErrors.conflict('管理员邮箱已经存在')
+        }
+        throw error
+      } finally {
+        client.release()
+      }
+      const accessToken = await app.jwt.sign({ sub: userId, email: input.email }, { expiresIn: '12h' })
+      return reply.code(201).send({ accessToken, user: { id: userId, email: input.email, name: input.name }, workspaceId })
+    })
 
     api.post('/auth/login', async (request) => {
       const input = credentialsSchema.parse(request.body)
@@ -266,6 +374,7 @@ export async function registerRoutes(app: FastifyInstance, pool: DatabasePool, c
 
     api.post('/auth/register', async (request, reply) => {
       if (!config.ALLOW_REGISTRATION) throw app.httpErrors.forbidden('Registration is disabled')
+      if (!(await getInstanceSetupStatus(pool, config)).initialized) throw app.httpErrors.conflict('请先完成服务实例初始化')
       const input = registerSchema.parse(request.body)
       const client = await pool.connect()
       try {
@@ -378,16 +487,7 @@ export async function registerRoutes(app: FastifyInstance, pool: DatabasePool, c
              credentials_encrypted = EXCLUDED.credentials_encrypted,
              updated_by = EXCLUDED.updated_by,
              updated_at = now()`,
-          [
-            settings.driver,
-            settings.driver === 'filesystem' ? settings.filesystemPath : null,
-            settings.driver === 's3' ? settings.endpoint : null,
-            settings.driver === 's3' ? settings.region : null,
-            settings.driver === 's3' ? settings.bucket : null,
-            settings.driver === 's3' ? settings.forcePathStyle : true,
-            credentialsEncrypted,
-            authUser(request).sub,
-          ],
+          storageSettingsParameters(settings, credentialsEncrypted, authUser(request).sub),
         )
         return { ok: true }
       })

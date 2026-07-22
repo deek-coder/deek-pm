@@ -73,7 +73,7 @@ import { officialServiceUrl, useRuntimeConfig, type SavedServiceConnection } fro
 import { ServiceStorageSettingsCard } from '../settings/ServiceStorageSettingsCard'
 import { LocalStorageSettingsCard } from '../settings/LocalStorageSettingsCard'
 import { changeServicePassword } from '../settings/serviceAccountApi'
-import { createServerRepositories, getServiceInstance, loginToService, normalizeServiceUrl } from '../../repositories/serverRepository'
+import { createServerRepositories, getServiceInstance, loginToService, normalizeServiceUrl, setupService } from '../../repositories/serverRepository'
 import { ThemeSettingsCard } from '../../theme/ThemeSettingsCard'
 import { useTheme } from '../../theme/themeContext'
 import { migrateLocalBackupToService } from './migrateLocalBackup'
@@ -152,6 +152,18 @@ export function LaunchPage() {
   const [servicePassword, setServicePassword] = useState('')
   const [serviceMessage, setServiceMessage] = useState('')
   const [connectingService, setConnectingService] = useState(false)
+  const [serviceSetupRequired, setServiceSetupRequired] = useState(false)
+  const [setupToken, setSetupToken] = useState('')
+  const [setupName, setSetupName] = useState('Administrator')
+  const [setupWorkspaceName, setSetupWorkspaceName] = useState('My Workspace')
+  const [setupPasswordConfirm, setSetupPasswordConfirm] = useState('')
+  const [setupStorageDriver, setSetupStorageDriver] = useState<'filesystem' | 's3'>('s3')
+  const [setupFilesystemPath, setSetupFilesystemPath] = useState('/data/deek-pm/assets')
+  const [setupS3Endpoint, setSetupS3Endpoint] = useState('http://rustfs:9000')
+  const [setupS3Region, setSetupS3Region] = useState('us-east-1')
+  const [setupS3Bucket, setSetupS3Bucket] = useState('deek-pm-assets')
+  const [setupS3AccessKey, setSetupS3AccessKey] = useState('')
+  const [setupS3SecretKey, setSetupS3SecretKey] = useState('')
   const { data: securityStatus = null } = useQuery({
     queryKey: ['local-security-status'],
     queryFn: async () => (await window.deek?.getLocalSecurityStatus?.())?.data ?? null,
@@ -173,6 +185,13 @@ export function LaunchPage() {
     setConnectingService(true)
     setServiceMessage('')
     try {
+      const instance = await getServiceInstance(serviceUrl)
+      if (serviceDeployment === 'selfhost' && instance.initialized === false) {
+        if (!instance.setupAvailable) throw new Error('该服务尚未初始化，并且服务端未配置 SETUP_TOKEN')
+        setServiceSetupRequired(true)
+        setServiceMessage('检测到全新实例，请完成管理员、工作空间和文件存储初始化。')
+        return
+      }
       await runtimeConfig.connectService({
         baseUrl: serviceUrl,
         deployment: serviceDeployment,
@@ -184,6 +203,46 @@ export function LaunchPage() {
       setServiceDialogOpen(false)
     } catch (error) {
       setServiceMessage(error instanceof Error ? error.message : '连接服务失败')
+    } finally {
+      setConnectingService(false)
+    }
+  }
+
+  const initializeService = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setConnectingService(true)
+    setServiceMessage('')
+    try {
+      if (servicePassword !== setupPasswordConfirm) throw new Error('两次输入的管理员密码不一致')
+      const storage = setupStorageDriver === 'filesystem'
+        ? { driver: 'filesystem' as const, filesystemPath: setupFilesystemPath.trim() }
+        : {
+            driver: 's3' as const,
+            endpoint: setupS3Endpoint.trim(),
+            region: setupS3Region.trim() || 'us-east-1',
+            bucket: setupS3Bucket.trim(),
+            forcePathStyle: true,
+            accessKey: setupS3AccessKey.trim(),
+            secretKey: setupS3SecretKey,
+          }
+      await setupService(serviceUrl, {
+        setupToken,
+        email: serviceEmail,
+        password: servicePassword,
+        name: setupName,
+        workspaceName: setupWorkspaceName,
+        storage,
+      })
+      await runtimeConfig.connectService({ baseUrl: serviceUrl, deployment: 'selfhost', email: serviceEmail, password: servicePassword })
+      queryClient.clear()
+      setServiceSetupRequired(false)
+      setSetupToken('')
+      setServicePassword('')
+      setSetupPasswordConfirm('')
+      setSetupS3SecretKey('')
+      setServiceDialogOpen(false)
+    } catch (error) {
+      setServiceMessage(error instanceof Error ? error.message : '服务初始化失败')
     } finally {
       setConnectingService(false)
     }
@@ -444,48 +503,105 @@ export function LaunchPage() {
         </aside>
       </section>
       </div>
-      <Dialog open={serviceDialogOpen} onOpenChange={setServiceDialogOpen}>
-        <DialogContent>
-          <form onSubmit={connectService}>
-            <DialogHeader>
-              <DialogTitle>连接 Deek PM 服务</DialogTitle>
-              <DialogDescription>官方服务与自部署服务使用完全相同的 API，客户端只需要切换服务地址。</DialogDescription>
-            </DialogHeader>
-            <div className="mt-5 grid gap-4">
-              <div className="grid gap-2">
-                <Label>服务类型</Label>
-                <Select
-                  value={serviceDeployment}
-                  onValueChange={(value) => {
-                    const deployment = value as 'cloud' | 'selfhost'
-                    setServiceDeployment(deployment)
-                    if (deployment === 'cloud') setServiceUrl(officialServiceUrl)
-                  }}
-                >
-                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="cloud">官方云服务</SelectItem>
-                    <SelectItem value="selfhost">自部署服务</SelectItem>
-                  </SelectContent>
-                </Select>
+      <Dialog open={serviceDialogOpen} onOpenChange={(open) => {
+        setServiceDialogOpen(open)
+        if (!open) {
+          setServiceSetupRequired(false)
+          setServiceMessage('')
+        }
+      }}>
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
+          {serviceSetupRequired ? (
+            <form onSubmit={initializeService}>
+              <DialogHeader>
+                <DialogTitle>初始化 Deek PM 自部署服务</DialogTitle>
+                <DialogDescription>仅首次安装执行。管理员、个人工作空间和文件存储验证成功后会一次性提交。</DialogDescription>
+              </DialogHeader>
+              <div className="mt-5 grid grid-cols-3 gap-2 text-xs text-muted-foreground">
+                {['1 管理员', '2 工作空间', '3 文件存储'].map((step) => <div key={step} className="rounded-md border bg-muted/30 px-2 py-2 text-center">{step}</div>)}
               </div>
-              <TextInput
-                label="服务地址"
-                value={serviceUrl}
-                onChange={(event) => setServiceUrl(event.target.value)}
-                placeholder="https://pm.example.com"
-              />
-              <TextInput label="账号邮箱" type="email" value={serviceEmail} onChange={(event) => setServiceEmail(event.target.value)} />
-              <TextInput label="密码" type="password" value={servicePassword} onChange={(event) => setServicePassword(event.target.value)} />
-              {serviceMessage && <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{serviceMessage}</div>}
-            </div>
-            <DialogFooter className="mt-6">
-              <DialogClose asChild><Button type="button" variant="outline">取消</Button></DialogClose>
-              <Button type="submit" disabled={connectingService || !serviceUrl || !serviceEmail || servicePassword.length < 8}>
-                {connectingService ? '正在连接…' : '连接并登录'}
-              </Button>
-            </DialogFooter>
-          </form>
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                <div className="md:col-span-2 rounded-lg border bg-muted/20 p-3 text-sm text-muted-foreground">
+                  初始化令牌位于 Docker 部署目录的 <code>.env</code> 文件中，只在首次安装时使用。
+                </div>
+                <TextInput label="初始化令牌" type="password" value={setupToken} onChange={(event) => setSetupToken(event.target.value)} />
+                <TextInput label="管理员姓名" value={setupName} onChange={(event) => setSetupName(event.target.value)} />
+                <TextInput label="管理员邮箱" type="email" value={serviceEmail} onChange={(event) => setServiceEmail(event.target.value)} />
+                <TextInput label="工作空间名称" value={setupWorkspaceName} onChange={(event) => setSetupWorkspaceName(event.target.value)} />
+                <TextInput label="管理员密码" type="password" value={servicePassword} onChange={(event) => setServicePassword(event.target.value)} />
+                <TextInput label="确认管理员密码" type="password" value={setupPasswordConfirm} onChange={(event) => setSetupPasswordConfirm(event.target.value)} />
+                <div className="grid gap-2 md:col-span-2">
+                  <Label>文件存储</Label>
+                  <Select value={setupStorageDriver} onValueChange={(value) => setSetupStorageDriver(value as 'filesystem' | 's3')}>
+                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="s3">内置 RustFS / S3（推荐）</SelectItem>
+                      <SelectItem value="filesystem">服务器本地目录</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {setupStorageDriver === 'filesystem' ? (
+                  <div className="md:col-span-2"><TextInput label="服务器文件目录" value={setupFilesystemPath} onChange={(event) => setSetupFilesystemPath(event.target.value)} /></div>
+                ) : (
+                  <>
+                    <TextInput label="S3 Endpoint" value={setupS3Endpoint} onChange={(event) => setSetupS3Endpoint(event.target.value)} />
+                    <TextInput label="Bucket" value={setupS3Bucket} onChange={(event) => setSetupS3Bucket(event.target.value)} />
+                    <TextInput label="Region" value={setupS3Region} onChange={(event) => setSetupS3Region(event.target.value)} />
+                    <div />
+                    <TextInput label="Access Key" value={setupS3AccessKey} onChange={(event) => setSetupS3AccessKey(event.target.value)} />
+                    <TextInput label="Secret Key" type="password" value={setupS3SecretKey} onChange={(event) => setSetupS3SecretKey(event.target.value)} />
+                  </>
+                )}
+                {serviceMessage && <div className="md:col-span-2 rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">{serviceMessage}</div>}
+              </div>
+              <DialogFooter className="mt-6">
+                <Button type="button" variant="outline" onClick={() => { setServiceSetupRequired(false); setServiceMessage('') }}>返回登录</Button>
+                <Button
+                  type="submit"
+                  disabled={connectingService || setupToken.length < 32 || !setupName.trim() || !setupWorkspaceName.trim() || !serviceEmail || servicePassword.length < 8 || servicePassword !== setupPasswordConfirm || (setupStorageDriver === 'filesystem' ? !setupFilesystemPath.trim() : !setupS3Endpoint.trim() || !setupS3Bucket.trim() || !setupS3AccessKey.trim() || !setupS3SecretKey)}
+                >
+                  {connectingService ? '正在测试存储并初始化…' : '完成初始化并登录'}
+                </Button>
+              </DialogFooter>
+            </form>
+          ) : (
+            <form onSubmit={connectService}>
+              <DialogHeader>
+                <DialogTitle>连接 Deek PM 服务</DialogTitle>
+                <DialogDescription>连接时会自动检测自部署实例是否需要首次初始化。</DialogDescription>
+              </DialogHeader>
+              <div className="mt-5 grid gap-4">
+                <div className="grid gap-2">
+                  <Label>服务类型</Label>
+                  <Select
+                    value={serviceDeployment}
+                    onValueChange={(value) => {
+                      const deployment = value as 'cloud' | 'selfhost'
+                      setServiceDeployment(deployment)
+                      setServiceSetupRequired(false)
+                      if (deployment === 'cloud') setServiceUrl(officialServiceUrl)
+                    }}
+                  >
+                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="cloud">官方云服务</SelectItem>
+                      <SelectItem value="selfhost">自部署服务</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <TextInput label="服务地址" value={serviceUrl} onChange={(event) => setServiceUrl(event.target.value)} placeholder="https://pm.example.com" />
+                <TextInput label="账号邮箱" type="email" value={serviceEmail} onChange={(event) => setServiceEmail(event.target.value)} />
+                <TextInput label="密码" type="password" value={servicePassword} onChange={(event) => setServicePassword(event.target.value)} />
+                {serviceMessage && <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{serviceMessage}</div>}
+              </div>
+              <DialogFooter className="mt-6">
+                <DialogClose asChild><Button type="button" variant="outline">取消</Button></DialogClose>
+                <Button type="submit" disabled={connectingService || !serviceUrl || !serviceEmail || servicePassword.length < 8}>
+                  {connectingService ? '正在检测并连接…' : '检测并登录'}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
         </DialogContent>
       </Dialog>
     </main>

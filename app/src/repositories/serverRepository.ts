@@ -17,11 +17,36 @@ export interface ServiceInstance {
   deployment: Extract<Deployment, 'cloud' | 'selfhost'>
   version: string
   registrationEnabled: boolean
+  initialized?: boolean
+  storageConfigured?: boolean
+  setupAvailable?: boolean
+  setupTokenRequired?: boolean
 }
 
 export interface ServiceLoginResult {
   accessToken: string
   user: { id: string; email: string; name: string }
+}
+
+export type ServiceSetupStorageInput =
+  | { driver: 'filesystem'; filesystemPath: string }
+  | {
+      driver: 's3'
+      endpoint: string
+      region: string
+      bucket: string
+      forcePathStyle: boolean
+      accessKey: string
+      secretKey: string
+    }
+
+export interface ServiceSetupInput {
+  setupToken: string
+  email: string
+  password: string
+  name: string
+  workspaceName: string
+  storage: ServiceSetupStorageInput
 }
 
 export function normalizeServiceUrl(value: string) {
@@ -54,6 +79,14 @@ export function loginToService(baseUrl: string, email: string, password: string)
   return publicRequest<ServiceLoginResult>(baseUrl, '/api/v1/auth/login', {
     method: 'POST',
     body: JSON.stringify({ email, password }),
+  })
+}
+
+export function setupService(baseUrl: string, input: ServiceSetupInput) {
+  return publicRequest<ServiceLoginResult & { workspaceId: string }>(baseUrl, '/api/v1/setup', {
+    method: 'POST',
+    body: JSON.stringify(input),
+    signal: AbortSignal.timeout(60_000),
   })
 }
 

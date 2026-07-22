@@ -2,6 +2,10 @@ import 'dotenv/config'
 import { z } from 'zod'
 
 const booleanFromString = z.string().optional().transform((value) => value === 'true')
+const optionalSecret = z.preprocess(
+  (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
+  z.string().min(32).max(500).optional(),
+)
 
 const databaseEnvSchema = z.object({
   DATABASE_URL: z.string().min(1),
@@ -18,6 +22,7 @@ const envSchema = databaseEnvSchema.extend({
   DATA_ENCRYPTION_KEY: z.string().min(32),
   CORS_ORIGIN: z.string().default('*'),
   ALLOW_REGISTRATION: booleanFromString,
+  SETUP_TOKEN: optionalSecret,
   STORAGE_MAX_FILE_SIZE: z.coerce.number().int().positive().default(100 * 1024 * 1024),
 })
 
