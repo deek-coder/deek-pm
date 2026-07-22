@@ -25,7 +25,6 @@ Deek PM 的官方云服务和自部署服务共用这一套 API。两种部署�
 npm install
 cp .env.example .env
 npm run db:migrate
-npm run db:seed
 npm run dev
 ```
 
@@ -34,7 +33,9 @@ npm run dev
 - `DATABASE_URL`：PostgreSQL 连接串
 - `JWT_SECRET`：至少 32 字符，仅用于签发登录令牌
 - `DATA_ENCRYPTION_KEY`：另一个至少 32 字符的随机密钥，用于加密敏感条目；部署后必须备份，丢失将无法解密已有数据
-- `BOOTSTRAP_EMAIL` / `BOOTSTRAP_PASSWORD`：首次运行 `db:seed` 时创建的所有者账号
+- `SETUP_TOKEN`：至少 32 字符的一次性初始化令牌；首次安装向导校验成功后才能创建实例管理员
+
+开发环境仍可通过 `BOOTSTRAP_EMAIL` / `BOOTSTRAP_PASSWORD` 配合 `npm run db:seed` 跳过安装向导。正式自部署推荐使用 Setup API，避免把管理员密码长期保存在环境变量中。
 
 可使用以下命令生成随机密钥：
 
@@ -57,14 +58,15 @@ curl http://127.0.0.1:3100/api/v1/instance
 
 ## 自部署
 
-复制 `.env.example` 为 `.env`，至少设置 `POSTGRES_PASSWORD`、`JWT_SECRET` 和 `DATA_ENCRYPTION_KEY`，然后执行：
+推荐从仓库根目录的 `deploy/docker` 目录部署；该目录包含随机密钥生成脚本、Compose 文件和首次安装说明。
+
+如直接使用本目录的 Compose，复制 `.env.example` 为 `.env`，至少设置 `POSTGRES_PASSWORD`、`JWT_SECRET`、`DATA_ENCRYPTION_KEY` 和 `SETUP_TOKEN`，然后执行：
 
 ```bash
 docker compose up -d --build
-docker compose exec api node dist/scripts/seed.js
 ```
 
-Compose 同时启动 RustFS，S3 API 为 `http://rustfs:9000`，控制台默认映射到宿主机 `9001` 端口。首次使用时仍需在客户端存储设置页保存 RustFS Endpoint、Bucket 与凭据，API 不会在本机开发环境里硬编码对象存储。
+Compose 同时启动 RustFS，S3 API 为 `http://rustfs:9000`，控制台默认映射到宿主机 `9001` 端口。客户端连接新实例时会自动显示首次安装向导，一次性创建管理员、工作空间并验证/保存 RustFS、S3 或服务器文件目录。
 
 生产环境应在 API 前放置 Nginx、Caddy 或云负载均衡并启用 HTTPS。客户端填写反向代理后的根地址，例如 `https://pm.example.com`，不要填写 `/api/v1` 后缀。
 
@@ -85,6 +87,8 @@ Compose 同时启动 RustFS，S3 API 为 `http://rustfs:9000`，控制台默认�
 
 - `GET /health`
 - `GET /api/v1/instance`
+- `GET /api/v1/setup/status`
+- `POST /api/v1/setup`（仅未初始化的自部署实例，要求 `SETUP_TOKEN`）
 - `POST /api/v1/auth/login`
 - `POST /api/v1/auth/register`（仅 `ALLOW_REGISTRATION=true`）
 

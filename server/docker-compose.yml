@@ -31,12 +31,15 @@ services:
       DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:?set DATA_ENCRYPTION_KEY in .env}
       CORS_ORIGIN: ${CORS_ORIGIN:-*}
       ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-false}
+      SETUP_TOKEN: ${SETUP_TOKEN:?set SETUP_TOKEN in .env}
       BOOTSTRAP_EMAIL: ${BOOTSTRAP_EMAIL:-}
       BOOTSTRAP_PASSWORD: ${BOOTSTRAP_PASSWORD:-}
       BOOTSTRAP_NAME: ${BOOTSTRAP_NAME:-Administrator}
       BOOTSTRAP_WORKSPACE: ${BOOTSTRAP_WORKSPACE:-My Workspace}
     ports:
       - "${PORT:-3100}:3100"
+    volumes:
+      - deek-assets:/data/deek-pm
 
   rustfs:
     image: rustfs/rustfs:latest
@@ -67,6 +70,7 @@ services:
 
 volumes:
   deek-postgres:
+  deek-assets:
   rustfs_data_0:
   rustfs_data_1:
   rustfs_data_2:
