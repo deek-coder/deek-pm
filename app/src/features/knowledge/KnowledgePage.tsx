@@ -88,10 +88,59 @@ type EditorMode = 'visual' | 'source' | 'code'
 
 const emptyGroups: KnowledgeGroup[] = []
 const emptyAttachments: ProjectAttachment[] = []
+const {
+  text,
+  shellscript,
+  javascript,
+  typescript,
+  tsx,
+  jsx,
+  python,
+  java,
+  csharp,
+  cpp,
+  c,
+  rust,
+  kotlin,
+  sql,
+  json,
+  jsonc,
+  yaml,
+  html,
+  css,
+  markdown,
+  ...additionalCodeLanguages
+} = codeBlockOptions.supportedLanguages
+const deekCodeBlockOptions = {
+  ...codeBlockOptions,
+  supportedLanguages: {
+    text,
+    shellscript: { ...shellscript, name: 'Bash / Shell' },
+    javascript,
+    typescript,
+    tsx,
+    jsx,
+    python,
+    java,
+    csharp,
+    cpp,
+    c,
+    rust,
+    kotlin,
+    sql,
+    json,
+    jsonc,
+    yaml,
+    html,
+    css,
+    markdown,
+    ...additionalCodeLanguages,
+  },
+}
 const blockNoteSchema = BlockNoteSchema.create({
   blockSpecs: {
     ...defaultBlockSpecs,
-    codeBlock: createCodeBlockSpec(codeBlockOptions),
+    codeBlock: createCodeBlockSpec(deekCodeBlockOptions),
   },
 })
 const standardEase = [0.22, 1, 0.36, 1] as const

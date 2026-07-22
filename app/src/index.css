@@ -107,6 +107,26 @@
     180ms;
   --motion-smooth:
     260ms;
+  --scrollbar-thumb:
+    oklch(0.36 0.022 255 / 36%);
+  --scrollbar-thumb-hover:
+    oklch(0.3 0.026 255 / 54%);
+  --scrollbar-thumb-active:
+    oklch(0.24 0.03 255 / 68%);
+  --inline-code-bg:
+    oklch(0.9 0.018 255 / 72%);
+  --inline-code-border:
+    oklch(0.7 0.03 255 / 34%);
+  --inline-code-fg:
+    oklch(0.3 0.055 255);
+  --code-block-bg:
+    oklch(0.205 0.025 258);
+  --code-block-bg-elevated:
+    oklch(0.255 0.03 258);
+  --code-block-border:
+    oklch(0.48 0.035 258 / 38%);
+  --code-block-fg:
+    oklch(0.94 0.012 255);
   /*
    * Type scale for Chinese desktop (Win/Electron).
    * Real macOS 13pt SF Pro looks larger on Retina; YaHei at the same rem
@@ -254,6 +274,64 @@
 
 * {
   box-sizing: border-box;
+  scrollbar-color: transparent transparent;
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  min-height: 2.5rem;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-color: transparent;
+  background-clip: padding-box;
+  transition: background-color var(--motion-normal) ease;
+}
+
+html[data-scroll-active='true'] *,
+*:hover,
+*:focus-within {
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+html[data-scroll-active='true'] *::-webkit-scrollbar-thumb,
+*:hover::-webkit-scrollbar-thumb,
+*:focus-within::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+
+*::-webkit-scrollbar-thumb:active {
+  background-color: var(--scrollbar-thumb-active);
+}
+
+[data-slot='scroll-area-scrollbar'] {
+  background: transparent;
+}
+
+[data-slot='scroll-area-thumb'] {
+  background: var(--scrollbar-thumb);
+  transition: background-color var(--motion-fast) ease;
+}
+
+[data-slot='scroll-area-thumb']:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+[data-slot='scroll-area-thumb']:active {
+  background: var(--scrollbar-thumb-active);
 }
 
 body {
@@ -319,19 +397,92 @@ button:disabled {
   z-index: 30;
 }
 
-.deek-blocknote-editor [data-content-type="codeBlock"] select,
-.deek-blocknote-editor pre + div select,
-.deek-blocknote-editor div:has(> pre) select {
-  max-width: 10rem;
-  height: 1.75rem;
-  margin: 0.5rem 0.5rem 0 0;
-  border: 1px solid var(--border);
-  border-radius: 0.375rem;
-  background: white;
-  color: var(--foreground);
+.deek-blocknote-editor .bn-inline-content code {
+  padding: 0.08em 0.38em 0.12em;
+  border: 1px solid var(--inline-code-border);
+  border-radius: 0.35rem;
+  background: var(--inline-code-bg);
+  color: var(--inline-code-fg);
+  font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.88em;
+  font-variant-ligatures: none;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.deek-blocknote-editor .bn-block-content[data-content-type="codeBlock"] {
+  overflow: hidden;
+  border: 1px solid var(--code-block-border);
+  border-radius: 0.7rem;
+  background: var(--code-block-bg);
+  color: var(--code-block-fg);
+  box-shadow: 0 10px 30px oklch(0.14 0.025 258 / 14%);
+  transition: border-color var(--motion-fast) ease, box-shadow var(--motion-fast) ease;
+}
+
+.deek-blocknote-editor .bn-block-content[data-content-type="codeBlock"]:focus-within {
+  border-color: color-mix(in oklab, var(--ring) 68%, var(--code-block-border));
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 18%, transparent), 0 12px 34px oklch(0.14 0.025 258 / 16%);
+}
+
+.deek-blocknote-editor .bn-block-content[data-content-type="codeBlock"] > pre {
+  width: 100%;
+  margin: 0;
+  padding: 2.85rem 1.1rem 1.05rem;
+  overflow-x: auto;
+  background: transparent;
+  color: inherit;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.875rem;
+  font-variant-ligatures: none;
+  line-height: 1.62;
+  tab-size: 2;
+  white-space: pre;
+}
+
+.deek-blocknote-editor .bn-block-content[data-content-type="codeBlock"] > pre code {
+  color: inherit;
+  font: inherit;
+}
+
+.deek-blocknote-editor .bn-block-content[data-content-type="codeBlock"] > pre ::selection {
+  background: oklch(0.66 0.15 250 / 42%);
+}
+
+.deek-blocknote-editor .bn-block-content[data-content-type="codeBlock"] > div > select {
+  position: absolute;
+  z-index: 2;
+  top: 0.55rem;
+  right: 0.65rem;
+  left: auto;
+  width: auto;
+  max-width: min(12rem, calc(100% - 1.3rem));
+  height: 1.7rem;
+  margin: 0;
+  padding: 0 0.4rem;
+  border: 1px solid oklch(0.72 0.025 255 / 24%);
+  border-radius: 0.42rem;
+  appearance: auto;
+  background: var(--code-block-bg-elevated);
+  color: oklch(0.9 0.014 255);
+  font-family: var(--font-ui);
   font-size: 0.75rem;
   line-height: 1;
+  opacity: 0.72;
   outline: none;
+  transition: opacity var(--motion-fast) ease, border-color var(--motion-fast) ease, background-color var(--motion-fast) ease;
+}
+
+.deek-blocknote-editor .bn-block-content[data-content-type="codeBlock"]:hover > div > select,
+.deek-blocknote-editor .bn-block-content[data-content-type="codeBlock"] > div > select:focus {
+  border-color: oklch(0.82 0.025 255 / 42%);
+  background: color-mix(in oklab, var(--code-block-bg-elevated) 82%, white);
+  opacity: 1;
+}
+
+.deek-blocknote-editor .bn-block-content[data-content-type="codeBlock"] > div > select > option {
+  background: var(--surface-elevated);
+  color: var(--foreground);
 }
 
 .deek-blocknote-editor .bn-suggestion-menu,
@@ -828,7 +979,8 @@ html[data-theme='macos'] .deek-blocknote-editor .bn-editor {
 html[data-theme='macos'] .deek-blocknote-editor [data-content-type='codeBlock'] select,
 html[data-theme='macos'] .deek-blocknote-editor pre + div select {
   border-radius: 0.4rem;
-  background: oklch(0.98 0.004 250);
+  background: var(--code-block-bg-elevated);
+  color: oklch(0.9 0.014 255);
 }
 
 /* Titlebar drag leave room for traffic lights */
@@ -1483,5 +1635,16 @@ html[data-theme='macos'] .deek-knowledge-shell .deek-page-subtitle-input {
   }
   html {
     @apply font-sans;
+  }
+}
+
+@media (forced-colors: active) {
+  * {
+    scrollbar-color: auto;
+  }
+
+  *::-webkit-scrollbar-thumb,
+  [data-slot='scroll-area-thumb'] {
+    background: CanvasText;
   }
 }
