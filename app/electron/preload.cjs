@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('deek', {
   getRuntimeInfo: () => ipcRenderer.invoke('deek:get-runtime-info'),
+  getLegacyAssetMigrationStatus: () => ipcRenderer.invoke('deek:get-legacy-asset-migration-status'),
   localRepository: (action, payload) => ipcRenderer.invoke('deek:local-repository', action, payload),
   importLocalAsset: (payload) => ipcRenderer.invoke('deek:import-local-asset', payload),
   importLocalAssetPath: (payload) => ipcRenderer.invoke('deek:import-local-asset-path', payload),

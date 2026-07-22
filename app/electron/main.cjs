@@ -6,6 +6,7 @@ const { pathToFileURL } = require('node:url')
 const crypto = require('node:crypto')
 const { createLocalDatabaseService } = require('./local-database.cjs')
 const { createAssetStorage, migrateAssetRecords } = require('./asset-storage.cjs')
+const { migrateLegacyInlineImages } = require('./legacy-asset-migration.cjs')
 const {
   copyManagedAssetsVerified,
   exportManagedAssetsForBackup,
@@ -24,6 +25,8 @@ const localStoreFileName = 'deek-local-store.json'
 const customManagedAssetsDirectoryName = 'deek-pm-assets'
 let localDatabaseService = null
 let managedAssetsMigrationInProgress = false
+let legacyAssetMigrationPromise = null
+let legacyAssetMigrationStatus = { state: 'idle', scannedEntries: 0, migratedEntries: 0, migratedAssets: 0, failedEntries: 0 }
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'deek-asset', privileges: { standard: true, secure: true, supportFetchAPI: true } },
@@ -199,6 +202,35 @@ async function processLocalAssetCleanupJobs(localDatabase) {
   return { completed, failed }
 }
 
+function startLegacyInlineImageMigration(localDatabase) {
+  if (legacyAssetMigrationPromise) return legacyAssetMigrationPromise
+  if (managedAssetsMigrationInProgress) return Promise.resolve({ skipped: true })
+  managedAssetsMigrationInProgress = true
+  legacyAssetMigrationStatus = { state: 'running', scannedEntries: 0, migratedEntries: 0, migratedAssets: 0, failedEntries: 0 }
+  legacyAssetMigrationPromise = migrateLegacyInlineImages({
+    database: localDatabase,
+    storage: getActiveAssetStorage(),
+    onProgress: (progress) => {
+      legacyAssetMigrationStatus = { state: 'running', ...progress, errors: undefined }
+    },
+  }).then((result) => {
+    legacyAssetMigrationStatus = { state: 'completed', ...result, errors: undefined }
+    if (result.scannedEntries > 0) console.info('旧正文图片迁移完成', result)
+    return result
+  }).catch((error) => {
+    legacyAssetMigrationStatus = {
+      ...legacyAssetMigrationStatus,
+      state: 'failed',
+      error: error && error.message ? error.message : String(error),
+    }
+    throw error
+  }).finally(() => {
+    managedAssetsMigrationInProgress = false
+    legacyAssetMigrationPromise = null
+  })
+  return legacyAssetMigrationPromise
+}
+
 async function exportActiveAssetsForBackup(localDatabase) {
   const settings = localDatabaseService.getAssetStorageSettings()
   if (settings.driver === 'filesystem') return exportManagedAssetsForBackup(runtimeAssetStorageSettings(settings).rootPath)
@@ -285,7 +317,9 @@ app.whenReady().then(() => {
   const localDatabase = createLocalDatabaseService({ app, safeStorage })
   localDatabaseService = localDatabase
   registerAssetProtocol()
-  void processLocalAssetCleanupJobs(localDatabase).catch(() => undefined)
+  void processLocalAssetCleanupJobs(localDatabase)
+    .then(() => startLegacyInlineImageMigration(localDatabase))
+    .catch((error) => console.error('本地资产后台维护失败', error))
 
   ipcMain.handle('deek:get-runtime-info', async () => ({
     platform: process.platform,
@@ -295,10 +329,16 @@ app.whenReady().then(() => {
     localDatabasePath: localDatabase.databasePath,
   }))
 
+  ipcMain.handle('deek:get-legacy-asset-migration-status', async () => legacyAssetMigrationStatus)
+
   ipcMain.handle('deek:local-repository', async (_event, action, payload) => {
     if (typeof action !== 'string' || action.trim().length === 0) return { ok: false, error: 'Invalid local repository action' }
     try {
-      return { ok: true, data: localDatabase.handle(action, payload) }
+      const data = localDatabase.handle(action, payload)
+      if (action === 'importBackup' || (action === 'updateEntry' && typeof payload?.textContent === 'string' && /data:image\//i.test(payload.textContent))) {
+        void startLegacyInlineImageMigration(localDatabase).catch((error) => console.error('旧正文图片迁移失败', error))
+      }
+      return { ok: true, data }
     } catch (error) {
       return {
         ok: false,
@@ -554,7 +594,9 @@ app.whenReady().then(() => {
   ipcMain.handle('deek:unlock-local-database', async (_event, payload) => {
     try {
       const data = localDatabase.unlock(payload ?? {})
-      void processLocalAssetCleanupJobs(localDatabase).catch(() => undefined)
+      void processLocalAssetCleanupJobs(localDatabase)
+        .then(() => startLegacyInlineImageMigration(localDatabase))
+        .catch((error) => console.error('本地资产后台维护失败', error))
       return { ok: true, data }
     } catch (error) {
       return { ok: false, error: error && error.message ? error.message : 'Unable to unlock local database' }

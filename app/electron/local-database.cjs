@@ -571,6 +571,10 @@ function handleRepositoryAction(db, action, payload = {}, fieldSecret) {
       return getAsset(db, payload.id)
     case 'listAssets':
       return listAssets(db)
+    case 'listLegacyInlineImageEntries':
+      return listLegacyInlineImageEntries(db, payload)
+    case 'commitLegacyInlineImageMigration':
+      return commitLegacyInlineImageMigration(db, payload)
     case 'upsertAsset':
       return upsertAsset(db, payload)
     case 'markAssetDeleted':
@@ -1163,6 +1167,35 @@ function getAsset(db, id) {
 
 function listAssets(db) {
   return db.prepare("SELECT * FROM assets WHERE workspace_id = ? AND status <> 'deleted' ORDER BY created_at").all(workspaceId).map(mapAssetRecord)
+}
+
+function listLegacyInlineImageEntries(db, input = {}) {
+  const afterEntryId = typeof input.afterEntryId === 'string' ? input.afterEntryId : ''
+  const limit = Math.min(Math.max(Number(input.limit) || 25, 1), 100)
+  return db.prepare(`
+    SELECT entry_id AS entryId, content
+    FROM text_entry_contents
+    WHERE entry_id > ? AND content LIKE '%data:image/%'
+    ORDER BY entry_id
+    LIMIT ?
+  `).all(afterEntryId, limit)
+}
+
+function commitLegacyInlineImageMigration(db, input) {
+  if (!input || typeof input.entryId !== 'string' || typeof input.expectedContent !== 'string' || typeof input.content !== 'string') {
+    throw new Error('Invalid legacy image migration payload')
+  }
+  if (!Array.isArray(input.assets)) throw new Error('Invalid legacy image migration assets')
+  return db.transaction(() => {
+    const current = db.prepare('SELECT content FROM text_entry_contents WHERE entry_id = ?').get(input.entryId)
+    if (!current || current.content !== input.expectedContent) return false
+    const previousAssetIds = db.prepare("SELECT asset_id FROM asset_references WHERE owner_type = 'entry' AND owner_id = ?").all(input.entryId).map((row) => row.asset_id)
+    for (const asset of input.assets) upsertAsset(db, asset)
+    db.prepare('UPDATE text_entry_contents SET content = ? WHERE entry_id = ?').run(input.content, input.entryId)
+    refreshAssetReferences(db, 'entry', input.entryId, [input.content])
+    for (const assetId of previousAssetIds) enqueueAssetCleanup(db, assetId)
+    return true
+  })()
 }
 
 function upsertAsset(db, input) {

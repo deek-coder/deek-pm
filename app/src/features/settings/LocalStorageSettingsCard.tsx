@@ -17,6 +17,7 @@ export function LocalStorageSettingsCard() {
   const [secretKey, setSecretKey] = useState('')
   const [forcePathStyle, setForcePathStyle] = useState(true)
   const [message, setMessage] = useState('')
+  const [legacyMigration, setLegacyMigration] = useState<DeekLegacyAssetMigrationStatus | null>(null)
   const [busy, setBusy] = useState<'load' | 'test' | 'save' | ''>('load')
 
   const applySettings = (value: DeekLocalStorageSettings) => {
@@ -52,6 +53,21 @@ export function LocalStorageSettingsCard() {
       .catch((error) => active && setMessage(error instanceof Error ? error.message : '无法读取本地文件存储配置'))
       .finally(() => active && setBusy(''))
     return () => { active = false }
+  }, [bridge])
+
+  useEffect(() => {
+    if (!bridge?.getLegacyAssetMigrationStatus) return
+    let active = true
+    const refresh = async () => {
+      const status = await bridge.getLegacyAssetMigrationStatus()
+      if (active) setLegacyMigration(status)
+    }
+    void refresh()
+    const timer = window.setInterval(() => void refresh(), 1_000)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
   }, [bridge])
 
   if (!bridge?.getLocalStorageSettings) {
@@ -142,6 +158,15 @@ export function LocalStorageSettingsCard() {
         <span className="flex items-center gap-2 text-muted-foreground">{settings?.driver === 's3' ? <Cloud size={14} /> : <Folder size={14} />}当前物理位置</span>
         <span className="break-all">{settings?.assetsPath ?? '读取中…'}</span>
       </div>
+      {legacyMigration && legacyMigration.state !== 'idle' && (
+        <div className="mt-4 rounded-md border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+          {legacyMigration.state === 'running'
+            ? `正在迁移旧正文图片：已扫描 ${legacyMigration.scannedEntries} 篇，已迁移 ${legacyMigration.migratedAssets} 个资产…`
+            : legacyMigration.state === 'failed'
+              ? `旧正文图片迁移失败：${legacyMigration.error ?? '未知错误'}`
+              : `旧正文图片迁移完成：${legacyMigration.migratedEntries} 篇正文、${legacyMigration.migratedAssets} 个资产、${legacyMigration.failedEntries} 个失败。`}
+        </div>
+      )}
       {message && <div className="mt-4 rounded-md border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">{message}</div>}
       <div className="mt-5 flex flex-wrap gap-2">
         <Button type="button" variant="outline" disabled={Boolean(busy)} onClick={() => void test()}><TestTube2 size={15} />{busy === 'test' ? '测试中…' : '测试连接'}</Button>

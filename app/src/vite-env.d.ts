@@ -46,6 +46,15 @@ interface DeekLocalSecurityStatus {
   databasePath: string
 }
 
+interface DeekLegacyAssetMigrationStatus {
+  state: 'idle' | 'running' | 'completed' | 'failed'
+  scannedEntries: number
+  migratedEntries: number
+  migratedAssets: number
+  failedEntries: number
+  error?: string
+}
+
 type DeekLocalStorageSettings = {
   driver: 'filesystem'
   configured: boolean
@@ -92,6 +101,7 @@ interface DeekMasterPasswordPayload {
 interface Window {
   deek?: {
     getRuntimeInfo(): Promise<DeekRuntimeInfo>
+    getLegacyAssetMigrationStatus(): Promise<DeekLegacyAssetMigrationStatus>
     localRepository<T = unknown>(action: string, payload?: unknown): Promise<DeekRepositoryResult<T>>
     importLocalAsset(payload: {
       workspaceId: string

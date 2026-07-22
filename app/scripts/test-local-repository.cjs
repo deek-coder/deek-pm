@@ -3,10 +3,12 @@ const fs = require('node:fs')
 const fsp = require('node:fs/promises')
 const path = require('node:path')
 const http = require('node:http')
+const crypto = require('node:crypto')
 const Database = require('better-sqlite3-multiple-ciphers')
 const { createEncryptedBackupEnvelope, decryptEncryptedBackupEnvelope, isEncryptedBackupEnvelope } = require('../electron/backup-crypto.cjs')
 const { createLocalDatabaseService } = require('../electron/local-database.cjs')
 const { createAssetStorage, migrateAssetRecords } = require('../electron/asset-storage.cjs')
+const { migrateLegacyInlineImages } = require('../electron/legacy-asset-migration.cjs')
 const {
   copyManagedAssetsVerified,
   exportManagedAssetsForBackup,
@@ -309,6 +311,33 @@ app.whenReady().then(async () => {
     assert(cleanupJob && cleanupJob.assetId === managedAssetId, 'releasing the last reference should atomically enqueue retryable cleanup work')
     service.handle('completeAssetCleanup', { jobId: cleanupJob.id, assetId: managedAssetId })
     assert(service.handle('getAsset', { id: managedAssetId }).status === 'deleted', 'completed cleanup should mark asset metadata deleted')
+
+    const inlineImageBytes = Buffer.from('legacy-inline-image')
+    const inlineImageDataUrl = `data:image/png;base64,${inlineImageBytes.toString('base64')}`
+    const legacyEntry = service.handle('createEntry', {
+      projectId: project.id,
+      groupId: group.id,
+      type: 'text',
+      title: '旧正文图片',
+    })
+    service.handle('updateEntry', {
+      id: legacyEntry.id,
+      textContent: JSON.stringify({
+        format: 'blocknote-json',
+        version: 1,
+        blocks: [{ type: 'image', props: { url: inlineImageDataUrl } }, { type: 'image', props: { url: inlineImageDataUrl } }],
+      }),
+    })
+    const inlineMigration = await migrateLegacyInlineImages({ database: service, storage: adapter })
+    assert(inlineMigration.migratedEntries === 1 && inlineMigration.migratedAssets === 1, 'legacy inline image migration should deduplicate and migrate SQL images')
+    const migratedLegacyEntry = service.handle('getEntry', { id: legacyEntry.id })
+    assert(!migratedLegacyEntry.textContent.includes('data:image/'), 'legacy inline image migration should remove Base64 data from SQL content')
+    assert(migratedLegacyEntry.textContent.match(/deek-asset:\/\/managed-assets\//g)?.length === 2, 'legacy inline image migration should rewrite every image reference')
+    const migratedInlineAsset = service.handle('listAssets').find((asset) => asset.sha256 === crypto.createHash('sha256').update(inlineImageBytes).digest('hex'))
+    assert(migratedInlineAsset && service.handle('isAssetReferenced', { id: migratedInlineAsset.id }), 'migrated inline image should create referenced asset metadata')
+    assert((await adapter.stat(migratedInlineAsset.objectKey)).size === inlineImageBytes.length, 'migrated inline image should persist verified bytes')
+    const repeatedMigration = await migrateLegacyInlineImages({ database: service, storage: adapter })
+    assert(repeatedMigration.scannedEntries === 0 && repeatedMigration.migratedEntries === 0, 'legacy inline image migration should be idempotent')
     service.close()
 
     console.log('local repository tests passed')
