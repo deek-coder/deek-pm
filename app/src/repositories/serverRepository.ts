@@ -1,5 +1,5 @@
 import type { Deployment } from '../domain/types'
-import type { BackupPayload, Repositories, RepositorySource } from './repository'
+import type { Repositories, RepositorySource } from './repository'
 
 export interface ServerRepositoryOptions {
   baseUrl: string
@@ -99,9 +99,6 @@ export function createServerRepositories(options: ServerRepositoryOptions): Repo
   const body = (value: unknown): RequestInit => ({ method: 'POST', body: JSON.stringify(value) })
   const patch = (value: unknown): RequestInit => ({ method: 'PATCH', body: JSON.stringify(value) })
   const remove: RequestInit = { method: 'DELETE' }
-  const unavailableBackup = async (): Promise<BackupPayload> => {
-    throw new Error('服务端空间由服务端统一备份，客户端不提供整库导入导出')
-  }
   const resolvedAssetUrls = new Map<string, string>()
 
   return {
@@ -140,10 +137,6 @@ export function createServerRepositories(options: ServerRepositoryOptions): Repo
       createQuickEntry: (input) => request('/quick-entries', body(input)),
       updateQuickEntry: ({ id, ...input }) => request(`/quick-entries/${encodeURIComponent(id)}`, patch(input)),
       deleteQuickEntry: (id) => request(`/quick-entries/${encodeURIComponent(id)}`, remove),
-    },
-    backup: {
-      exportBackup: unavailableBackup,
-      importBackup: async () => { throw new Error('服务端空间不支持从客户端覆盖导入') },
     },
     asset: {
       uploadAsset: async ({ workspaceId, kind, file }) => {

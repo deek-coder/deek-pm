@@ -140,12 +140,20 @@ export interface BackupPayload {
   attachments: ProjectAttachment[]
   quickEntries?: QuickEntry[]
   managedAssets?: LocalBackupAsset[]
+  managedAssetRecords?: LocalManagedAssetRecord[]
   omittedManagedAssets?: Array<{ relativePath: string; sizeBytes: number }>
 }
 
 export interface LocalBackupAsset {
   relativePath: string
   contentBase64: string
+}
+
+export interface LocalManagedAssetRecord extends ManagedAsset {
+  sha256: string
+  objectKey: string
+  status: 'pending' | 'ready' | 'deleting' | 'deleted' | 'error'
+  updatedAt: string
 }
 
 export interface BackupRepository {
@@ -178,6 +186,6 @@ export interface Repositories {
   knowledge: KnowledgeRepository
   attachment: AttachmentRepository
   quickEntry: QuickEntryRepository
-  backup: BackupRepository
+  backup?: BackupRepository
   asset: AssetRepository
 }

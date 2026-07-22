@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld('deek', {
   importLocalAsset: (payload) => ipcRenderer.invoke('deek:import-local-asset', payload),
   importLocalAssetPath: (payload) => ipcRenderer.invoke('deek:import-local-asset-path', payload),
   getLocalStorageSettings: () => ipcRenderer.invoke('deek:get-local-storage-settings'),
+  testLocalAssetStorage: (settings) => ipcRenderer.invoke('deek:test-local-asset-storage', settings),
+  setLocalAssetStorage: (settings) => ipcRenderer.invoke('deek:set-local-asset-storage', settings),
   testLocalStoragePath: (basePath) => ipcRenderer.invoke('deek:test-local-storage-path', basePath),
   setLocalStoragePath: (basePath) => ipcRenderer.invoke('deek:set-local-storage-path', basePath),
   openLocalAssetsDir: () => ipcRenderer.invoke('deek:open-local-assets-dir'),

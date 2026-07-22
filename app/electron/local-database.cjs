@@ -4,7 +4,7 @@ const path = require('node:path')
 const crypto = require('node:crypto')
 const Database = require('better-sqlite3-multiple-ciphers')
 
-const databaseVersion = 7
+const databaseVersion = 8
 const workspaceId = 'local-personal'
 const fieldEncryptedPrefix = 'deek-field:v1:'
 
@@ -120,6 +120,12 @@ function createLocalDatabaseService({ app, safeStorage }) {
     unlock,
     lock,
     disableMasterPassword,
+    getAssetStorageSettings() {
+      return getAssetStorageSettings(getDb(), unlockedDatabaseKey, true)
+    },
+    setAssetStorageSettings(settings) {
+      return setAssetStorageSettings(getDb(), settings, unlockedDatabaseKey)
+    },
     handle(action, payload) {
       return handleRepositoryAction(getDb(), action, payload, unlockedDatabaseKey)
     },
@@ -349,6 +355,41 @@ function migrate(db) {
         UNIQUE(base_url, account_email)
       );
 
+      CREATE TABLE IF NOT EXISTS assets (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL CHECK (kind IN ('image', 'attachment')),
+        original_name TEXT NOT NULL,
+        mime_type TEXT NOT NULL,
+        size_bytes INTEGER NOT NULL,
+        sha256 TEXT NOT NULL,
+        object_key TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('pending', 'ready', 'deleting', 'deleted', 'error')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(workspace_id, sha256)
+      );
+
+      CREATE TABLE IF NOT EXISTS asset_references (
+        id TEXT PRIMARY KEY,
+        asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+        owner_type TEXT NOT NULL CHECK (owner_type IN ('entry', 'attachment')),
+        owner_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE(asset_id, owner_type, owner_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS asset_cleanup_jobs (
+        id TEXT PRIMARY KEY,
+        asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+        object_key TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('pending', 'processing', 'done', 'failed')),
+        attempts INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
       CREATE INDEX IF NOT EXISTS idx_projects_workspace ON projects(workspace_id, updated_at DESC);
       CREATE INDEX IF NOT EXISTS idx_groups_project ON knowledge_groups(project_id, sort_order);
       CREATE INDEX IF NOT EXISTS idx_entries_project ON knowledge_entries(project_id, sort_order);
@@ -357,6 +398,64 @@ function migrate(db) {
       CREATE INDEX IF NOT EXISTS idx_link_items_entry ON link_entry_items(entry_id, sort_order);
       CREATE INDEX IF NOT EXISTS idx_attachments_project ON project_attachments(project_id, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_quick_entries_workspace ON quick_entries(workspace_id, published DESC, sort_order);
+      CREATE INDEX IF NOT EXISTS idx_assets_workspace ON assets(workspace_id, status, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_asset_references_owner ON asset_references(owner_type, owner_id);
+      CREATE INDEX IF NOT EXISTS idx_asset_cleanup_jobs_status ON asset_cleanup_jobs(status, updated_at);
+
+      CREATE TRIGGER IF NOT EXISTS trg_groups_parent_same_project_insert
+      BEFORE INSERT ON knowledge_groups
+      WHEN NEW.parent_group_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM knowledge_groups parent WHERE parent.id = NEW.parent_group_id AND parent.project_id = NEW.project_id
+      )
+      BEGIN
+        SELECT RAISE(ABORT, 'Parent group must belong to the same project');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_groups_parent_same_project_update
+      BEFORE UPDATE OF parent_group_id, project_id ON knowledge_groups
+      WHEN NEW.parent_group_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM knowledge_groups parent WHERE parent.id = NEW.parent_group_id AND parent.project_id = NEW.project_id
+      )
+      BEGIN
+        SELECT RAISE(ABORT, 'Parent group must belong to the same project');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_entries_relations_insert
+      BEFORE INSERT ON knowledge_entries
+      WHEN NOT EXISTS (
+        SELECT 1 FROM knowledge_groups group_row WHERE group_row.id = NEW.group_id AND group_row.project_id = NEW.project_id
+      ) OR (
+        NEW.parent_entry_id IS NOT NULL AND NOT EXISTS (
+          SELECT 1 FROM knowledge_entries parent
+          WHERE parent.id = NEW.parent_entry_id AND parent.project_id = NEW.project_id AND parent.group_id = NEW.group_id
+        )
+      )
+      BEGIN
+        SELECT RAISE(ABORT, 'Entry group and parent must belong to the same project and group');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_entries_relations_update
+      BEFORE UPDATE OF project_id, group_id, parent_entry_id ON knowledge_entries
+      WHEN NOT EXISTS (
+        SELECT 1 FROM knowledge_groups group_row WHERE group_row.id = NEW.group_id AND group_row.project_id = NEW.project_id
+      ) OR (
+        NEW.parent_entry_id IS NOT NULL AND NOT EXISTS (
+          SELECT 1 FROM knowledge_entries parent
+          WHERE parent.id = NEW.parent_entry_id AND parent.project_id = NEW.project_id AND parent.group_id = NEW.group_id
+        )
+      ) OR (
+        NEW.parent_entry_id IS NOT NULL AND EXISTS (
+          WITH RECURSIVE descendants(id) AS (
+            SELECT OLD.id
+            UNION ALL
+            SELECT child.id FROM knowledge_entries child JOIN descendants parent ON child.parent_entry_id = parent.id
+          )
+          SELECT 1 FROM descendants WHERE id = NEW.parent_entry_id
+        )
+      )
+      BEGIN
+        SELECT RAISE(ABORT, 'Entry hierarchy cannot cross projects or form a cycle');
+      END;
     `)
     ensureColumn(db, 'knowledge_groups', 'parent_group_id', 'TEXT')
     ensureColumn(db, 'knowledge_entries', 'parent_entry_id', 'TEXT')
@@ -435,8 +534,7 @@ function handleRepositoryAction(db, action, payload = {}, fieldSecret) {
     case 'updateProject':
       return updateProject(db, payload)
     case 'deleteProject':
-      db.prepare('DELETE FROM projects WHERE id = ?').run(payload.id)
-      return null
+      return deleteProject(db, payload.id)
     case 'listGroups':
       return listGroups(db, payload.projectId)
     case 'searchEntryIds':
@@ -469,6 +567,22 @@ function handleRepositoryAction(db, action, payload = {}, fieldSecret) {
       return isAssetReferenced(db, payload.id)
     case 'listReferencedAssetIds':
       return listReferencedAssetIds(db)
+    case 'getAsset':
+      return getAsset(db, payload.id)
+    case 'listAssets':
+      return listAssets(db)
+    case 'upsertAsset':
+      return upsertAsset(db, payload)
+    case 'markAssetDeleted':
+      return markAssetDeleted(db, payload.id)
+    case 'enqueueAssetCleanup':
+      return enqueueAssetCleanup(db, payload.id)
+    case 'listPendingAssetCleanupJobs':
+      return listPendingAssetCleanupJobs(db)
+    case 'completeAssetCleanup':
+      return completeAssetCleanup(db, payload.jobId, payload.assetId)
+    case 'failAssetCleanup':
+      return failAssetCleanup(db, payload.jobId, payload.error)
     case 'getLocalStorageSettings':
       return getLocalStorageSettings(db)
     case 'setLocalStorageSettings':
@@ -516,6 +630,20 @@ function createProject(db, input) {
     VALUES (@id, @workspaceId, @name, @description, @tag, @tone, @createdAt, @updatedAt)
   `).run(project)
   return mapProject(db, db.prepare('SELECT * FROM projects WHERE id = ?').get(project.id))
+}
+
+function deleteProject(db, id) {
+  const entryIds = db.prepare('SELECT id FROM knowledge_entries WHERE project_id = ?').all(id).map((row) => row.id)
+  const attachmentIds = db.prepare('SELECT id FROM project_attachments WHERE project_id = ?').all(id).map((row) => row.id)
+  db.transaction(() => {
+    const released = [
+      ...deleteAssetReferences(db, 'entry', entryIds),
+      ...deleteAssetReferences(db, 'attachment', attachmentIds),
+    ]
+    db.prepare('DELETE FROM projects WHERE id = ?').run(id)
+    for (const assetId of released) enqueueAssetCleanup(db, assetId)
+  })()
+  return null
 }
 
 function updateProject(db, input) {
@@ -571,6 +699,10 @@ function searchEntryIds(db, projectId, query, fieldSecret) {
 }
 
 function createGroup(db, input) {
+  if (input.parentGroupId) {
+    const parent = db.prepare('SELECT project_id FROM knowledge_groups WHERE id = ?').get(input.parentGroupId)
+    if (!parent || parent.project_id !== input.projectId) throw new Error('父分组必须属于同一项目')
+  }
   const now = nowIso()
   const sortOrder = nextSortOrder(db, 'knowledge_groups', 'project_id', input.projectId)
   const group = {
@@ -602,8 +734,14 @@ function deleteGroup(db, id) {
   const group = db.prepare('SELECT * FROM knowledge_groups WHERE id = ?').get(id)
   if (!group) return null
   const groupIds = collectGroupDescendantIds(db, id)
+  const placeholders = groupIds.map(() => '?').join(',')
+  const entryIds = placeholders
+    ? db.prepare(`SELECT id FROM knowledge_entries WHERE group_id IN (${placeholders})`).all(...groupIds).map((row) => row.id)
+    : []
   const deleteGroups = db.transaction(() => {
+    const released = deleteAssetReferences(db, 'entry', entryIds)
     for (const groupId of groupIds) db.prepare('DELETE FROM knowledge_groups WHERE id = ?').run(groupId)
+    for (const assetId of released) enqueueAssetCleanup(db, assetId)
   })
   deleteGroups()
   touchProject(db, group.project_id)
@@ -633,8 +771,9 @@ function moveEntry(db, entryId, targetGroupId) {
   const entry = db.prepare('SELECT * FROM knowledge_entries WHERE id = ?').get(entryId)
   const targetGroup = db.prepare('SELECT * FROM knowledge_groups WHERE id = ?').get(targetGroupId)
   if (!entry || !targetGroup || entry.group_id === targetGroupId) return null
+  if (entry.project_id !== targetGroup.project_id) throw new Error('目标分组必须属于条目所在项目')
   const sortOrder = nextSortOrder(db, 'knowledge_entries', 'group_id', targetGroupId)
-  db.prepare('UPDATE knowledge_entries SET group_id = ?, sort_order = ?, updated_at = ? WHERE id = ?').run(targetGroupId, sortOrder, nowIso(), entryId)
+  db.prepare('UPDATE knowledge_entries SET group_id = ?, parent_entry_id = NULL, sort_order = ?, updated_at = ? WHERE id = ?').run(targetGroupId, sortOrder, nowIso(), entryId)
   touchProject(db, targetGroup.project_id)
   return null
 }
@@ -655,6 +794,7 @@ function reorderEntry(db, entryId, direction) {
 }
 
 function createEntry(db, input, fieldSecret) {
+  assertEntryRelation(db, input.projectId, input.groupId, input.parentEntryId)
   const now = nowIso()
   const entry = {
     id: `entry-${crypto.randomUUID()}`,
@@ -700,13 +840,17 @@ function insertEntry(db, entry, fieldSecret) {
   if (entry.type === 'link') {
     insertLinkItems(db, entry.id, entry.linkItems ?? [])
   }
+  refreshAssetReferences(db, 'entry', entry.id, [entry.textContent])
 }
 
 function updateEntry(db, input, fieldSecret) {
   const current = db.prepare('SELECT * FROM knowledge_entries WHERE id = ?').get(input.id)
   if (!current) return undefined
+  const nextParentEntryId = input.parentEntryId === undefined ? current.parent_entry_id : input.parentEntryId
+  assertEntryRelation(db, current.project_id, current.group_id, nextParentEntryId, input.id)
   const now = nowIso()
   db.transaction(() => {
+    const previousAssetIds = db.prepare("SELECT asset_id FROM asset_references WHERE owner_type = 'entry' AND owner_id = ?").all(input.id).map((row) => row.asset_id)
     db.prepare(`
       UPDATE knowledge_entries
       SET title = ?, parent_entry_id = ?, icon = ?, remark = ?, tags_json = ?, updated_at = ?
@@ -722,6 +866,8 @@ function updateEntry(db, input, fieldSecret) {
     )
     if (current.type === 'text' && typeof input.textContent === 'string') {
       db.prepare('UPDATE text_entry_contents SET content = ? WHERE entry_id = ?').run(input.textContent, input.id)
+      refreshAssetReferences(db, 'entry', input.id, [input.textContent])
+      for (const assetId of previousAssetIds) enqueueAssetCleanup(db, assetId)
     }
     if (current.type === 'password' && input.passwordItems) {
       db.prepare('DELETE FROM password_entry_items WHERE entry_id = ?').run(input.id)
@@ -736,12 +882,32 @@ function updateEntry(db, input, fieldSecret) {
   return getEntry(db, input.id, fieldSecret)
 }
 
+function assertEntryRelation(db, projectId, groupId, parentEntryId, entryId) {
+  const group = db.prepare('SELECT project_id FROM knowledge_groups WHERE id = ?').get(groupId)
+  if (!group || group.project_id !== projectId) throw new Error('条目分组必须属于同一项目')
+  if (!parentEntryId) return
+  const parent = db.prepare('SELECT project_id, group_id FROM knowledge_entries WHERE id = ?').get(parentEntryId)
+  if (!parent || parent.project_id !== projectId || parent.group_id !== groupId) throw new Error('父条目必须属于同一项目和分组')
+  if (!entryId) return
+  const cycle = db.prepare(`
+    WITH RECURSIVE descendants(id) AS (
+      SELECT ?
+      UNION ALL
+      SELECT child.id FROM knowledge_entries child JOIN descendants parent ON child.parent_entry_id = parent.id
+    )
+    SELECT 1 AS found FROM descendants WHERE id = ? LIMIT 1
+  `).get(entryId, parentEntryId)
+  if (cycle) throw new Error('条目层级不能形成循环')
+}
+
 function deleteEntry(db, id) {
   const entry = db.prepare('SELECT * FROM knowledge_entries WHERE id = ?').get(id)
   if (!entry) return null
   const entryIds = collectEntryDescendantIds(db, id)
   const deleteEntries = db.transaction(() => {
+    const released = deleteAssetReferences(db, 'entry', entryIds)
     for (const entryId of entryIds) db.prepare('DELETE FROM knowledge_entries WHERE id = ?').run(entryId)
+    for (const assetId of released) enqueueAssetCleanup(db, assetId)
   })
   deleteEntries()
   touchProject(db, entry.project_id)
@@ -893,6 +1059,7 @@ function addAttachment(db, input) {
     INSERT INTO project_attachments (id, project_id, name, target_type, target, asset_id, created_at)
     VALUES (@id, @projectId, @name, @targetType, @target, @assetId, @createdAt)
   `).run(attachment)
+  refreshAssetReferences(db, 'attachment', attachment.id, [attachment.assetId, attachment.target])
   touchProject(db, input.projectId)
   return mapAttachmentRow(attachment)
 }
@@ -900,7 +1067,11 @@ function addAttachment(db, input) {
 function removeAttachment(db, id) {
   const attachment = db.prepare('SELECT * FROM project_attachments WHERE id = ?').get(id)
   if (!attachment) return null
-  db.prepare('DELETE FROM project_attachments WHERE id = ?').run(id)
+  db.transaction(() => {
+    const released = deleteAssetReferences(db, 'attachment', [id])
+    db.prepare('DELETE FROM project_attachments WHERE id = ?').run(id)
+    for (const assetId of released) enqueueAssetCleanup(db, assetId)
+  })()
   touchProject(db, attachment.project_id)
   return null
 }
@@ -908,6 +1079,8 @@ function removeAttachment(db, id) {
 function isAssetReferenced(db, assetId) {
   if (typeof assetId !== 'string' || !/^local-[a-f0-9]{64}$/i.test(assetId)) return false
   const sha256 = assetId.slice('local-'.length)
+  const explicitCount = db.prepare('SELECT COUNT(*) AS count FROM asset_references WHERE asset_id = ?').get(assetId).count
+  if (explicitCount > 0) return true
   const attachmentCount = db.prepare(`
     SELECT COUNT(*) AS count
     FROM project_attachments
@@ -921,6 +1094,7 @@ function listReferencedAssetIds(db) {
   const result = new Set()
   const pattern = /local-[a-f0-9]{64}/gi
   const values = [
+    ...db.prepare('SELECT asset_id AS value FROM asset_references').all(),
     ...db.prepare('SELECT asset_id AS value FROM project_attachments WHERE asset_id IS NOT NULL').all(),
     ...db.prepare('SELECT target AS value FROM project_attachments WHERE target LIKE ?').all('%deek-asset://managed-assets/%'),
     ...db.prepare('SELECT content AS value FROM text_entry_contents WHERE content LIKE ?').all('%deek-asset://managed-assets/%'),
@@ -933,16 +1107,163 @@ function listReferencedAssetIds(db) {
   return [...result]
 }
 
+function assetIdsInValues(values) {
+  const result = new Set()
+  const idPattern = /local-[a-f0-9]{64}/gi
+  const urlPattern = /deek-asset:\/\/managed-assets\/[a-f0-9]{2}\/([a-f0-9]{64})(?:[./"'?#]|$)/gi
+  for (const value of values) {
+    const text = String(value ?? '')
+    for (const match of text.matchAll(idPattern)) result.add(match[0].toLowerCase())
+    for (const match of text.matchAll(urlPattern)) result.add(`local-${match[1].toLowerCase()}`)
+  }
+  return [...result]
+}
+
+function refreshAssetReferences(db, ownerType, ownerId, values) {
+  db.prepare('DELETE FROM asset_references WHERE owner_type = ? AND owner_id = ?').run(ownerType, ownerId)
+  const insert = db.prepare(`
+    INSERT OR IGNORE INTO asset_references (id, asset_id, owner_type, owner_id, created_at)
+    SELECT ?, id, ?, ?, ? FROM assets WHERE id = ? AND status <> 'deleted'
+  `)
+  for (const assetId of assetIdsInValues(values)) {
+    const referenceId = `asset-ref-${crypto.createHash('sha256').update(`${ownerType}:${ownerId}:${assetId}`).digest('hex')}`
+    insert.run(referenceId, ownerType, ownerId, nowIso(), assetId)
+  }
+}
+
+function deleteAssetReferences(db, ownerType, ownerIds) {
+  if (ownerIds.length === 0) return []
+  const placeholders = ownerIds.map(() => '?').join(',')
+  const released = db.prepare(`SELECT DISTINCT asset_id FROM asset_references WHERE owner_type = ? AND owner_id IN (${placeholders})`).all(ownerType, ...ownerIds).map((row) => row.asset_id)
+  db.prepare(`DELETE FROM asset_references WHERE owner_type = ? AND owner_id IN (${placeholders})`).run(ownerType, ...ownerIds)
+  return released
+}
+
+function mapAssetRecord(row) {
+  if (!row) return undefined
+  return {
+    id: row.id,
+    workspaceId: row.workspace_id,
+    kind: row.kind,
+    originalName: row.original_name,
+    mimeType: row.mime_type,
+    sizeBytes: Number(row.size_bytes),
+    sha256: row.sha256,
+    objectKey: row.object_key,
+    status: row.status,
+    storedUrl: `deek-asset://managed-assets/${row.object_key}`,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+function getAsset(db, id) {
+  return mapAssetRecord(db.prepare('SELECT * FROM assets WHERE id = ?').get(id))
+}
+
+function listAssets(db) {
+  return db.prepare("SELECT * FROM assets WHERE workspace_id = ? AND status <> 'deleted' ORDER BY created_at").all(workspaceId).map(mapAssetRecord)
+}
+
+function upsertAsset(db, input) {
+  if (!input || typeof input.id !== 'string' || !/^local-[a-f0-9]{64}$/i.test(input.id)) throw new Error('Invalid local asset id')
+  if (typeof input.sha256 !== 'string' || input.id.toLowerCase() !== `local-${input.sha256.toLowerCase()}`) throw new Error('Local asset id must match SHA-256')
+  const now = nowIso()
+  const record = {
+    id: input.id.toLowerCase(),
+    workspaceId,
+    kind: input.kind === 'attachment' ? 'attachment' : 'image',
+    originalName: String(input.originalName || 'asset.bin'),
+    mimeType: String(input.mimeType || 'application/octet-stream'),
+    sizeBytes: Number(input.sizeBytes) || 0,
+    sha256: input.sha256.toLowerCase(),
+    objectKey: String(input.objectKey || ''),
+    status: input.status === 'pending' ? 'pending' : 'ready',
+    createdAt: typeof input.createdAt === 'string' ? input.createdAt : now,
+    updatedAt: now,
+  }
+  if (!record.objectKey) throw new Error('Local asset object key is required')
+  db.prepare(`
+    INSERT INTO assets (id, workspace_id, kind, original_name, mime_type, size_bytes, sha256, object_key, status, created_at, updated_at)
+    VALUES (@id, @workspaceId, @kind, @originalName, @mimeType, @sizeBytes, @sha256, @objectKey, @status, @createdAt, @updatedAt)
+    ON CONFLICT(id) DO UPDATE SET
+      kind = excluded.kind,
+      original_name = excluded.original_name,
+      mime_type = excluded.mime_type,
+      size_bytes = excluded.size_bytes,
+      object_key = excluded.object_key,
+      status = excluded.status,
+      updated_at = excluded.updated_at
+  `).run(record)
+  db.prepare("UPDATE asset_cleanup_jobs SET status = 'done', updated_at = ? WHERE asset_id = ? AND status <> 'done'").run(now, record.id)
+  for (const row of db.prepare('SELECT id, asset_id, target FROM project_attachments WHERE asset_id = ? OR target LIKE ?').all(record.id, `%${record.sha256}%`)) {
+    refreshAssetReferences(db, 'attachment', row.id, [row.asset_id, row.target])
+  }
+  for (const row of db.prepare('SELECT entry_id, content FROM text_entry_contents WHERE content LIKE ?').all(`%${record.sha256}%`)) {
+    refreshAssetReferences(db, 'entry', row.entry_id, [row.content])
+  }
+  return getAsset(db, record.id)
+}
+
+function markAssetDeleted(db, id) {
+  db.prepare("UPDATE assets SET status = 'deleted', updated_at = ? WHERE id = ?").run(nowIso(), id)
+  return null
+}
+
+function enqueueAssetCleanup(db, assetId) {
+  const asset = db.prepare("SELECT * FROM assets WHERE id = ? AND status NOT IN ('deleted', 'deleting')").get(assetId)
+  if (!asset) return null
+  const referenced = db.prepare('SELECT EXISTS(SELECT 1 FROM asset_references WHERE asset_id = ?) AS value').get(assetId).value
+  if (referenced) return null
+  const now = nowIso()
+  const job = { id: `asset-cleanup-${crypto.randomUUID()}`, assetId, objectKey: asset.object_key, createdAt: now, updatedAt: now }
+  db.transaction(() => {
+    db.prepare("UPDATE assets SET status = 'deleting', updated_at = ? WHERE id = ?").run(now, assetId)
+    db.prepare(`
+      INSERT INTO asset_cleanup_jobs (id, asset_id, object_key, status, attempts, created_at, updated_at)
+      VALUES (@id, @assetId, @objectKey, 'pending', 0, @createdAt, @updatedAt)
+    `).run(job)
+  })()
+  return job
+}
+
+function listPendingAssetCleanupJobs(db) {
+  return db.prepare(`
+    SELECT id, asset_id AS assetId, object_key AS objectKey, attempts
+    FROM asset_cleanup_jobs WHERE status IN ('pending', 'failed') ORDER BY updated_at LIMIT 100
+  `).all()
+}
+
+function completeAssetCleanup(db, jobId, assetId) {
+  const now = nowIso()
+  db.transaction(() => {
+    db.prepare("UPDATE asset_cleanup_jobs SET status = 'done', updated_at = ? WHERE id = ?").run(now, jobId)
+    db.prepare("UPDATE assets SET status = 'deleted', updated_at = ? WHERE id = ?").run(now, assetId)
+  })()
+  return null
+}
+
+function failAssetCleanup(db, jobId, error) {
+  db.prepare(`
+    UPDATE asset_cleanup_jobs
+    SET status = 'failed', attempts = attempts + 1, last_error = ?, updated_at = ?
+    WHERE id = ?
+  `).run(String(error || 'Unknown cleanup error').slice(0, 2000), nowIso(), jobId)
+  return null
+}
+
 function getLocalStorageSettings(db) {
+  const modern = getAssetStorageSettings(db, null, false)
+  if (modern.driver === 's3') return modern
   const row = db.prepare("SELECT value, updated_at FROM local_settings WHERE key = 'managed_assets_base_path'").get()
-  if (!row) return { configured: false }
-  return { configured: true, basePath: row.value, updatedAt: row.updated_at }
+  if (!row) return { driver: 'filesystem', configured: false }
+  return { driver: 'filesystem', configured: true, basePath: row.value, updatedAt: row.updated_at }
 }
 
 function setLocalStorageSettings(db, basePath) {
   if (basePath === null || basePath === undefined || basePath === '') {
     db.prepare("DELETE FROM local_settings WHERE key = 'managed_assets_base_path'").run()
-    return { configured: false }
+    return { driver: 'filesystem', configured: false }
   }
   if (typeof basePath !== 'string') throw new Error('Invalid local storage base path')
   const updatedAt = nowIso()
@@ -951,7 +1272,73 @@ function setLocalStorageSettings(db, basePath) {
     VALUES ('managed_assets_base_path', ?, ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
   `).run(basePath, updatedAt)
-  return { configured: true, basePath, updatedAt }
+  return { driver: 'filesystem', configured: true, basePath, updatedAt }
+}
+
+function getAssetStorageSettings(db, fieldSecret, includeCredentials) {
+  const row = db.prepare("SELECT value, updated_at FROM local_settings WHERE key = 'asset_storage_v2'").get()
+  if (!row) {
+    const legacy = db.prepare("SELECT value, updated_at FROM local_settings WHERE key = 'managed_assets_base_path'").get()
+    return {
+      driver: 'filesystem',
+      configured: Boolean(legacy),
+      basePath: legacy?.value ?? null,
+      updatedAt: legacy?.updated_at,
+    }
+  }
+  const parsed = parseJson(row.value, null)
+  if (!parsed || !['filesystem', 's3'].includes(parsed.driver)) throw new Error('Invalid local asset storage settings')
+  if (parsed.driver === 'filesystem') {
+    return { driver: 'filesystem', configured: Boolean(parsed.basePath), basePath: parsed.basePath ?? null, updatedAt: row.updated_at }
+  }
+  const result = {
+    driver: 's3',
+    configured: true,
+    endpoint: parsed.endpoint,
+    region: parsed.region,
+    bucket: parsed.bucket,
+    forcePathStyle: parsed.forcePathStyle !== false,
+    hasCredentials: Boolean(parsed.credentialsEncrypted),
+    updatedAt: row.updated_at,
+  }
+  if (!includeCredentials) return result
+  if (!fieldSecret) throw new Error('Local database is locked')
+  const credentials = parseJson(decryptSensitiveField(parsed.credentialsEncrypted, fieldSecret), null)
+  if (!credentials?.accessKey || !credentials?.secretKey) throw new Error('S3 credentials are unavailable')
+  return { ...result, credentials }
+}
+
+function setAssetStorageSettings(db, input, fieldSecret) {
+  if (!input || !['filesystem', 's3'].includes(input.driver)) throw new Error('Invalid local asset storage settings')
+  const now = nowIso()
+  let stored
+  if (input.driver === 'filesystem') {
+    stored = { driver: 'filesystem', basePath: typeof input.basePath === 'string' && input.basePath.trim() ? input.basePath.trim() : null }
+  } else {
+    if (!fieldSecret) throw new Error('Local database is locked')
+    const suppliedCredentials = input.credentials?.accessKey && input.credentials?.secretKey ? input.credentials : null
+    const current = suppliedCredentials ? null : getAssetStorageSettings(db, fieldSecret, true)
+    const credentials = suppliedCredentials ?? (current?.driver === 's3' ? current.credentials : null)
+    if (!credentials) throw new Error('S3 credentials are required')
+    stored = {
+      driver: 's3',
+      endpoint: String(input.endpoint || '').replace(/\/$/, ''),
+      region: String(input.region || 'us-east-1'),
+      bucket: String(input.bucket || ''),
+      forcePathStyle: input.forcePathStyle !== false,
+      credentialsEncrypted: encryptSensitiveField(JSON.stringify(credentials), fieldSecret),
+    }
+    if (!/^https?:\/\//i.test(stored.endpoint) || !stored.bucket) throw new Error('Invalid S3 endpoint or bucket')
+  }
+  db.prepare(`
+    INSERT INTO local_settings (key, value, updated_at) VALUES ('asset_storage_v2', ?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+  `).run(JSON.stringify(stored), now)
+  if (stored.driver === 'filesystem') {
+    if (stored.basePath) setLocalStorageSettings(db, stored.basePath)
+    else setLocalStorageSettings(db, null)
+  }
+  return getAssetStorageSettings(db, fieldSecret, false)
 }
 
 function listSavedServiceConnections(db) {
@@ -1063,6 +1450,7 @@ function exportBackup(db, fieldSecret) {
     ),
     attachments: projectIds.flatMap((projectId) => db.prepare('SELECT * FROM project_attachments WHERE project_id = ?').all(projectId).map(mapAttachment)),
     quickEntries: db.prepare('SELECT * FROM quick_entries WHERE workspace_id = ? ORDER BY sort_order ASC, created_at ASC').all(workspaceId).map(mapQuickEntry),
+    managedAssetRecords: listAssets(db),
   }
 }
 
@@ -1083,6 +1471,13 @@ function importBackup(db, payload, fieldSecret) {
       INSERT INTO workspaces (id, type, deployment, name, description, status, service_url, created_at, updated_at)
       VALUES (@id, @type, @deployment, @name, @description, @status, @serviceUrl, @createdAt, @updatedAt)
     `).run({ ...localWorkspace, serviceUrl: localWorkspace.serviceUrl ?? null, createdAt: now, updatedAt: now })
+    for (const asset of payload.managedAssetRecords ?? []) {
+      upsertAsset(db, {
+        ...asset,
+        sha256: asset.sha256 ?? String(asset.id).replace(/^local-/, ''),
+        objectKey: asset.objectKey ?? String(asset.storedUrl ?? '').replace('deek-asset://managed-assets/', ''),
+      })
+    }
     for (const project of payload.projects.filter((item) => item.workspaceId === workspaceId)) {
       db.prepare(`
         INSERT INTO projects (id, workspace_id, name, description, tag, tone, created_at, updated_at)
@@ -1106,6 +1501,7 @@ function importBackup(db, payload, fieldSecret) {
         INSERT INTO project_attachments (id, project_id, name, target_type, target, asset_id, created_at)
         VALUES (@id, @projectId, @name, @targetType, @target, @assetId, @createdAt)
       `).run({ ...attachment, assetId: attachment.assetId ?? null, createdAt: now })
+      refreshAssetReferences(db, 'attachment', attachment.id, [attachment.assetId, attachment.target])
     }
     for (const [index, quickEntry] of (payload.quickEntries ?? []).filter((item) => item.workspaceId === workspaceId).entries()) {
       db.prepare(`

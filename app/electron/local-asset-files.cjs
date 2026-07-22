@@ -82,4 +82,63 @@ async function exportManagedAssetsForBackup(root, options = {}) {
   return { assets, omitted }
 }
 
-module.exports = { copyManagedAssetsVerified, exportManagedAssetsForBackup, hashFile, listManagedAssetFiles }
+function decodeBackupAsset(contentBase64) {
+  if (typeof contentBase64 !== 'string' || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(contentBase64)) {
+    throw new Error('Invalid local asset content')
+  }
+  return Buffer.from(contentBase64, 'base64')
+}
+
+async function restoreManagedAssetsMerged(root, assets) {
+  if (!Array.isArray(assets)) throw new Error('Invalid local assets payload')
+
+  const resolvedRoot = path.resolve(root)
+  const parent = path.dirname(resolvedRoot)
+  const suffix = crypto.randomUUID()
+  const stagingRoot = path.join(parent, `.managed-assets-restore-${suffix}`)
+  const previousRoot = path.join(parent, `.managed-assets-previous-${suffix}`)
+  const preparedAssets = assets.map((asset) => {
+    if (!asset || typeof asset.relativePath !== 'string') throw new Error('Invalid local asset in backup')
+    const target = resolveTarget(stagingRoot, asset.relativePath)
+    return { target, bytes: decodeBackupAsset(asset.contentBase64) }
+  })
+
+  let movedPrevious = false
+  try {
+    try {
+      await fs.cp(resolvedRoot, stagingRoot, { recursive: true, errorOnExist: true, force: false })
+    } catch (error) {
+      if (!error || error.code !== 'ENOENT') throw error
+      await fs.mkdir(stagingRoot, { recursive: true })
+    }
+
+    for (const asset of preparedAssets) {
+      await fs.mkdir(path.dirname(asset.target), { recursive: true })
+      await fs.writeFile(asset.target, asset.bytes)
+    }
+
+    try {
+      await fs.rename(resolvedRoot, previousRoot)
+      movedPrevious = true
+    } catch (error) {
+      if (!error || error.code !== 'ENOENT') throw error
+    }
+    await fs.rename(stagingRoot, resolvedRoot)
+    if (movedPrevious) await fs.rm(previousRoot, { recursive: true, force: true }).catch(() => undefined)
+  } catch (error) {
+    await fs.rm(stagingRoot, { recursive: true, force: true }).catch(() => undefined)
+    if (movedPrevious) {
+      await fs.rm(resolvedRoot, { recursive: true, force: true }).catch(() => undefined)
+      await fs.rename(previousRoot, resolvedRoot).catch(() => undefined)
+    }
+    throw error
+  }
+}
+
+module.exports = {
+  copyManagedAssetsVerified,
+  exportManagedAssetsForBackup,
+  hashFile,
+  listManagedAssetFiles,
+  restoreManagedAssetsMerged,
+}

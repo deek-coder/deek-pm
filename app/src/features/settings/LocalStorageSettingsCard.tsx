@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Database, Folder, FolderOpen, RotateCcw, Save, TestTube2 } from 'lucide-react'
+import { Cloud, Database, Folder, FolderOpen, Save, TestTube2 } from 'lucide-react'
 import { Badge } from '../../components/ui/badge'
 import { Button } from '../../components/ui/button'
 import { Card } from '../../components/ui/card'
@@ -8,15 +8,36 @@ import { TextInput } from '../../components/ui/field'
 export function LocalStorageSettingsCard() {
   const bridge = window.deek
   const [settings, setSettings] = useState<DeekLocalStorageSettings | null>(null)
+  const [driver, setDriver] = useState<'filesystem' | 's3'>('filesystem')
   const [basePath, setBasePath] = useState('')
+  const [endpoint, setEndpoint] = useState('http://127.0.0.1:9000')
+  const [region, setRegion] = useState('us-east-1')
+  const [bucket, setBucket] = useState('deek-pm-assets')
+  const [accessKey, setAccessKey] = useState('')
+  const [secretKey, setSecretKey] = useState('')
+  const [forcePathStyle, setForcePathStyle] = useState(true)
   const [message, setMessage] = useState('')
-  const [busy, setBusy] = useState<'load' | 'test' | 'save' | 'reset' | ''>('load')
+  const [busy, setBusy] = useState<'load' | 'test' | 'save' | ''>('load')
+
+  const applySettings = (value: DeekLocalStorageSettings) => {
+    setSettings(value)
+    setDriver(value.driver)
+    if (value.driver === 'filesystem') {
+      setBasePath(value.basePath ?? '')
+    } else {
+      setEndpoint(value.endpoint)
+      setRegion(value.region)
+      setBucket(value.bucket)
+      setForcePathStyle(value.forcePathStyle)
+      setAccessKey('')
+      setSecretKey('')
+    }
+  }
 
   const load = async () => {
     const result = await window.deek?.getLocalStorageSettings?.()
     if (!result?.ok || !result.data) throw new Error(result?.error ?? '无法读取本地文件存储配置')
-    setSettings(result.data)
-    setBasePath(result.data.basePath ?? '')
+    applySettings(result.data)
   }
 
   useEffect(() => {
@@ -26,8 +47,7 @@ export function LocalStorageSettingsCard() {
       .then((result) => {
         if (!active) return
         if (!result?.ok || !result.data) throw new Error(result?.error ?? '无法读取本地文件存储配置')
-        setSettings(result.data)
-        setBasePath(result.data.basePath ?? '')
+        applySettings(result.data)
       })
       .catch((error) => active && setMessage(error instanceof Error ? error.message : '无法读取本地文件存储配置'))
       .finally(() => active && setBusy(''))
@@ -35,13 +55,19 @@ export function LocalStorageSettingsCard() {
   }, [bridge])
 
   if (!bridge?.getLocalStorageSettings) {
-    return (
-      <Card className="p-5 lg:col-span-2">
-        <h2 className="text-sm font-semibold">本地托管文件物理存储</h2>
-        <p className="mt-2 text-sm text-muted-foreground">Web 预览无法配置本机目录，请在 Electron 桌面客户端中使用。</p>
-      </Card>
-    )
+    return <Card className="p-5 lg:col-span-2"><h2 className="text-sm font-semibold">本地托管文件物理存储</h2><p className="mt-2 text-sm text-muted-foreground">请在 Electron 桌面客户端中配置。</p></Card>
   }
+
+  const input = (): DeekLocalAssetStorageInput => driver === 'filesystem'
+    ? { driver, basePath: basePath.trim() || null }
+    : {
+        driver,
+        endpoint: endpoint.trim(),
+        region: region.trim() || 'us-east-1',
+        bucket: bucket.trim(),
+        forcePathStyle,
+        credentials: accessKey.trim() && secretKey ? { accessKey: accessKey.trim(), secretKey } : undefined,
+      }
 
   const chooseDirectory = async () => {
     const selected = await window.deek?.selectPath?.({ kind: 'directory', title: '选择本地托管文件存储位置' })
@@ -49,33 +75,32 @@ export function LocalStorageSettingsCard() {
   }
 
   const test = async () => {
-    if (!basePath.trim()) return
     setBusy('test')
     setMessage('')
     try {
-      const result = await window.deek?.testLocalStoragePath?.(basePath.trim())
-      if (!result?.ok) throw new Error(result?.error ?? '目录不可写')
-      setMessage(`目录可写，实际文件将保存在：${result.data?.assetsPath}`)
+      const result = await window.deek?.testLocalAssetStorage?.(input())
+      if (!result?.ok) throw new Error(result?.error ?? '存储不可写')
+      setMessage(driver === 's3' ? 'S3 连接、Bucket 和写入测试通过。' : '目录写入测试通过。')
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : '目录测试失败')
+      setMessage(error instanceof Error ? error.message : '存储测试失败')
     } finally {
       setBusy('')
     }
   }
 
-  const save = async (nextBasePath: string | null) => {
-    setBusy(nextBasePath === null ? 'reset' : 'save')
-    setMessage(nextBasePath === null ? '正在迁回默认目录并校验文件…' : '正在迁移并校验现有文件…')
+  const save = async () => {
+    setBusy('save')
+    setMessage('正在复制并校验现有资产；验证完成前不会切换存储…')
     try {
-      const result = await window.deek?.setLocalStoragePath?.(nextBasePath)
-      if (!result?.ok || !result.data) throw new Error(result?.error ?? '本地存储位置保存失败')
-      await load()
+      const result = await window.deek?.setLocalAssetStorage?.(input())
+      if (!result?.ok || !result.data) throw new Error(result?.error ?? '本地存储配置保存失败')
       const moved = result.data.migratedFiles > 0
         ? `已迁移 ${result.data.migratedFiles} 个文件（${formatBytes(result.data.migratedBytes)}）。`
-        : '当前没有需要迁移的文件。'
-      setMessage(`${nextBasePath === null ? '已恢复默认存储位置。' : '本地物理存储配置已保存到 SQLCipher 数据库。'}${moved}${result.data.cleanupWarning ? ` 旧目录未完全清理：${result.data.cleanupWarning}` : ''}`)
+        : '没有需要迁移的已登记资产。'
+      await load()
+      setMessage(`存储配置已安全切换。${moved}`)
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : '本地存储位置保存失败')
+      setMessage(error instanceof Error ? error.message : '本地存储配置保存失败')
     } finally {
       setBusy('')
     }
@@ -85,27 +110,43 @@ export function LocalStorageSettingsCard() {
     <Card className="p-5 lg:col-span-2">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-sm font-semibold">本地托管文件物理存储</h2>
-          <p className="mt-1 text-sm text-muted-foreground">正文图片和上传附件默认保存在应用数据目录，也可以迁移到其他磁盘。</p>
-          <p className="mt-1 text-xs text-muted-foreground">选择的是父目录，Deek PM 会使用其中独立的 `deek-pm-assets` 子目录；配置保存在本地 SQLCipher 数据库。</p>
-          <p className="mt-1 text-xs text-muted-foreground">超过 16 MB 的单个文件不会内嵌进 `.deekbak`，请把该物理目录纳入磁盘备份。</p>
+          <h2 className="text-sm font-semibold">本地统一资产存储</h2>
+          <p className="mt-1 text-sm text-muted-foreground">正文图片和上传附件使用同一个资产仓储，可保存到本机目录或 S3 兼容服务。</p>
+          <p className="mt-1 text-xs text-muted-foreground">切换驱动时先复制并校验，成功后才提交配置；S3 凭据加密保存在 SQLCipher。</p>
         </div>
-        <Badge variant={settings?.configured ? 'default' : 'outline'}>{busy === 'load' ? '读取中' : settings?.configured ? '自定义目录' : '默认目录'}</Badge>
+        <Badge variant={driver === 's3' ? 'default' : 'outline'}>{driver === 's3' ? 'S3' : settings?.configured ? '自定义目录' : '默认目录'}</Badge>
       </div>
-      <div className="mt-5 grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
-        <TextInput label="物理存储父目录" value={basePath} onChange={(event) => setBasePath(event.target.value)} placeholder={settings?.defaultPath ?? '选择其他磁盘或目录'} />
-        <Button type="button" variant="outline" disabled={Boolean(busy)} onClick={() => void chooseDirectory()}><FolderOpen size={15} />选择目录</Button>
+
+      <div className="mt-5 flex gap-2">
+        <Button type="button" variant={driver === 'filesystem' ? 'default' : 'outline'} disabled={Boolean(busy)} onClick={() => setDriver('filesystem')}><Folder size={15} />本机目录</Button>
+        <Button type="button" variant={driver === 's3' ? 'default' : 'outline'} disabled={Boolean(busy)} onClick={() => setDriver('s3')}><Cloud size={15} />S3 兼容存储</Button>
       </div>
+
+      {driver === 'filesystem' ? (
+        <div className="mt-5 grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+          <TextInput label="物理存储父目录（留空使用默认目录）" value={basePath} onChange={(event) => setBasePath(event.target.value)} placeholder={settings?.defaultPath ?? '应用默认目录'} />
+          <Button type="button" variant="outline" disabled={Boolean(busy)} onClick={() => void chooseDirectory()}><FolderOpen size={15} />选择目录</Button>
+        </div>
+      ) : (
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <TextInput label="S3 Endpoint" value={endpoint} onChange={(event) => setEndpoint(event.target.value)} placeholder="https://s3.example.com" />
+          <TextInput label="Bucket" value={bucket} onChange={(event) => setBucket(event.target.value)} />
+          <TextInput label="Region" value={region} onChange={(event) => setRegion(event.target.value)} />
+          <label className="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" checked={forcePathStyle} onChange={(event) => setForcePathStyle(event.target.checked)} />使用 Path Style（RustFS/MinIO 通常需要）</label>
+          <TextInput label={settings?.driver === 's3' && settings.hasCredentials ? 'Access Key（留空保持原值）' : 'Access Key'} value={accessKey} onChange={(event) => setAccessKey(event.target.value)} />
+          <TextInput label={settings?.driver === 's3' && settings.hasCredentials ? 'Secret Key（留空保持原值）' : 'Secret Key'} type="password" value={secretKey} onChange={(event) => setSecretKey(event.target.value)} />
+        </div>
+      )}
+
       <div className="mt-4 grid gap-2 rounded-md border bg-muted/30 p-3 text-sm">
-        <span className="flex items-center gap-2 text-muted-foreground"><Folder size={14} />当前实际目录</span>
+        <span className="flex items-center gap-2 text-muted-foreground">{settings?.driver === 's3' ? <Cloud size={14} /> : <Folder size={14} />}当前物理位置</span>
         <span className="break-all">{settings?.assetsPath ?? '读取中…'}</span>
       </div>
       {message && <div className="mt-4 rounded-md border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">{message}</div>}
       <div className="mt-5 flex flex-wrap gap-2">
-        <Button type="button" variant="outline" disabled={Boolean(busy) || !basePath.trim()} onClick={() => void test()}><TestTube2 size={15} />{busy === 'test' ? '测试中…' : '测试目录'}</Button>
-        <Button type="button" disabled={Boolean(busy) || !basePath.trim()} onClick={() => void save(basePath.trim())}><Save size={15} />{busy === 'save' ? '迁移中…' : '保存并迁移'}</Button>
-        <Button type="button" variant="ghost" disabled={Boolean(busy) || !settings?.configured} onClick={() => void save(null)}><RotateCcw size={15} />{busy === 'reset' ? '迁回中…' : '恢复默认目录'}</Button>
-        <Button type="button" variant="outline" className="ml-auto" disabled={Boolean(busy)} onClick={() => void window.deek?.openLocalAssetsDir?.()}><FolderOpen size={15} />打开当前目录</Button>
+        <Button type="button" variant="outline" disabled={Boolean(busy)} onClick={() => void test()}><TestTube2 size={15} />{busy === 'test' ? '测试中…' : '测试连接'}</Button>
+        <Button type="button" disabled={Boolean(busy)} onClick={() => void save()}><Save size={15} />{busy === 'save' ? '迁移中…' : '保存并迁移'}</Button>
+        {settings?.driver === 'filesystem' && <Button type="button" variant="outline" className="ml-auto" disabled={Boolean(busy)} onClick={() => void window.deek?.openLocalAssetsDir?.()}><FolderOpen size={15} />打开当前目录</Button>}
         <span className="inline-flex items-center gap-2 text-xs text-muted-foreground"><Database size={14} />配置加密入本地库</span>
       </div>
     </Card>

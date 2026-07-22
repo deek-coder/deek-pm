@@ -23,6 +23,7 @@ const webPreviewSource: RepositorySource = {
 const autoBackupDirectoryStorageKey = 'deek-pm.auto-backup-dir.v1'
 const autoBackupErrorStorageKey = 'deek-pm.auto-backup-error.v1'
 const autoBackupPasswordStorageKey = 'deek-pm.auto-backup-password.v1'
+const assetCleanupErrorStorageKey = 'deek-pm.asset-cleanup-error.v1'
 const autoBackupIntervalMs = 5 * 60 * 1000
 let lastAutoBackupAt = 0
 
@@ -57,7 +58,6 @@ export function createLocalRepositories(options: LocalRepositoryOptions = {}): R
     if (!directory) return
     const now = Date.now()
     if (now - lastAutoBackupAt < autoBackupIntervalMs) return
-    lastAutoBackupAt = now
     const encryptedPassword = window.localStorage.getItem(autoBackupPasswordStorageKey)
     if (!encryptedPassword) return
     const password = await window.deek.safeDecryptText(encryptedPassword)
@@ -68,15 +68,22 @@ export function createLocalRepositories(options: LocalRepositoryOptions = {}): R
     const payload = await exportBackupWithAssets()
     const result = await window.deek.writeEncryptedBackupToDirectory(directory, JSON.stringify(payload), password)
     if (result.ok) {
+      lastAutoBackupAt = now
       window.localStorage.removeItem(autoBackupErrorStorageKey)
       return
     }
     window.localStorage.setItem(autoBackupErrorStorageKey, result.error ?? 'Auto backup failed')
   }
 
+  const persistAutoBackupSafely = async () => {
+    await persistAutoBackup().catch((error) => {
+      window.localStorage.setItem(autoBackupErrorStorageKey, error instanceof Error ? error.message : 'Auto backup failed')
+    })
+  }
+
   const mutate = async <T>(action: string, payload?: unknown): Promise<T> => {
     const data = await request<T>(action, payload)
-    await persistAutoBackup()
+    await persistAutoBackupSafely()
     return data
   }
 
@@ -90,6 +97,8 @@ export function createLocalRepositories(options: LocalRepositoryOptions = {}): R
   const mutateAndPrune = async <T>(action: string, payload?: unknown): Promise<T> => {
     const data = await mutate<T>(action, payload)
     await pruneLocalAssets()
+      .then(() => window.localStorage.removeItem(assetCleanupErrorStorageKey))
+      .catch((error) => window.localStorage.setItem(assetCleanupErrorStorageKey, error instanceof Error ? error.message : 'Asset cleanup failed'))
     return data
   }
 
@@ -136,7 +145,7 @@ export function createLocalRepositories(options: LocalRepositoryOptions = {}): R
         const previous = await exportBackupWithAssets()
         await request('importBackup', { payload })
         if (payload.managedAssets === undefined || !window.deek?.restoreLocalAssets) {
-          await persistAutoBackup()
+          await persistAutoBackupSafely()
           return
         }
         const result = await window.deek.restoreLocalAssets(payload.managedAssets)
@@ -147,7 +156,7 @@ export function createLocalRepositories(options: LocalRepositoryOptions = {}): R
           }
           throw new Error(result.error ?? '本地资产恢复失败，已回滚到恢复前状态')
         }
-        await persistAutoBackup()
+        await persistAutoBackupSafely()
       },
     },
     asset: {

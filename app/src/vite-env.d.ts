@@ -46,15 +46,39 @@ interface DeekLocalSecurityStatus {
   databasePath: string
 }
 
-interface DeekLocalStorageSettings {
+type DeekLocalStorageSettings = {
+  driver: 'filesystem'
   configured: boolean
-  basePath?: string
+  basePath?: string | null
+  assetsPath: string
+  defaultPath: string
+  updatedAt?: string
+} | {
+  driver: 's3'
+  configured: true
+  endpoint: string
+  region: string
+  bucket: string
+  forcePathStyle: boolean
+  hasCredentials: boolean
   assetsPath: string
   defaultPath: string
   updatedAt?: string
 }
 
-interface DeekLocalStorageMigrationResult extends DeekLocalStorageSettings {
+type DeekLocalAssetStorageInput = {
+  driver: 'filesystem'
+  basePath: string | null
+} | {
+  driver: 's3'
+  endpoint: string
+  region: string
+  bucket: string
+  forcePathStyle: boolean
+  credentials?: { accessKey: string; secretKey: string }
+}
+
+type DeekLocalStorageMigrationResult = DeekLocalStorageSettings & {
   migratedFiles: number
   migratedBytes: number
   cleanupWarning?: string
@@ -82,6 +106,8 @@ interface Window {
       filePath: string
     }): Promise<DeekRepositoryResult<import('./repositories/repository').ManagedAsset>>
     getLocalStorageSettings(): Promise<DeekRepositoryResult<DeekLocalStorageSettings>>
+    testLocalAssetStorage(settings: DeekLocalAssetStorageInput): Promise<DeekRepositoryResult<{ driver: 'filesystem' | 's3' }>>
+    setLocalAssetStorage(settings: DeekLocalAssetStorageInput): Promise<DeekRepositoryResult<DeekLocalStorageMigrationResult>>
     testLocalStoragePath(basePath: string): Promise<DeekRepositoryResult<{ assetsPath: string }>>
     setLocalStoragePath(basePath: string | null): Promise<DeekRepositoryResult<DeekLocalStorageMigrationResult>>
     openLocalAssetsDir(): Promise<DeekOpenResult>
