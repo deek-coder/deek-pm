@@ -33,7 +33,7 @@
     "@electric-sql/pglite": "^0.5.4",
     "@types/node": "^24.10.1",
     "@types/pg": "^8.15.6",
-    "tsx": "^4.20.6",
+    "tsx": "^4.23.5",
     "typescript": "^5.9.3"
   }
 }
