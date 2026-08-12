@@ -1145,6 +1145,12 @@ html[data-theme='macos'] .deek-dialog {
     0 32px 90px oklch(0.25 0.03 255 / 30%);
   font-size: var(--text-body);
 }
+html[data-theme='macos'] .deek-update-dialog,
+.deek-update-dialog {
+  width: min(60rem, calc(100vw - 3rem));
+  max-width: min(60rem, calc(100vw - 3rem));
+  padding: 0;
+}
 html[data-theme='macos'] [data-slot='dialog-title'] {
   font-size: var(--text-title2);
   line-height: 1.3;

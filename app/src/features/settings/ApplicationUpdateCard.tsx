@@ -60,29 +60,31 @@ export function ApplicationUpdateCard({ className, layout = 'responsive' }: { cl
 
   if (wide) {
     return (
-      <div className={cn('grid min-h-full grid-cols-[17rem_minmax(0,1fr)] bg-background/85', className)}>
-        <aside className="flex flex-col items-center justify-center border-r bg-muted/30 px-8 py-10 text-center">
+      <div className={cn('grid min-h-full grid-cols-1 bg-background/85 md:grid-cols-[17rem_minmax(0,1fr)]', className)}>
+        <aside className="flex items-center gap-5 border-b bg-muted/30 px-6 py-5 text-left md:flex-col md:justify-center md:gap-0 md:border-b-0 md:border-r md:px-8 md:py-10 md:text-center">
           <img
             src={deekLogoMark}
             alt="Deek PM"
-            className="size-28 rounded-[1.75rem] border border-border/60 shadow-[0_18px_45px_rgba(15,23,42,0.18)]"
+            className="size-16 shrink-0 rounded-2xl border border-border/60 shadow-[0_12px_30px_rgba(15,23,42,0.16)] md:size-28 md:rounded-[1.75rem] md:shadow-[0_18px_45px_rgba(15,23,42,0.18)]"
           />
-          <h2 className="mt-6 text-2xl font-semibold tracking-[-0.03em]">Deek PM</h2>
-          <p className="mt-1 text-[length:var(--text-callout)] text-muted-foreground">
-            版本 {state?.currentVersion ?? '—'}
-          </p>
-          <div className="mt-5 flex items-center gap-2 text-[length:var(--text-caption)] text-muted-foreground">
-            <span className="size-1.5 rounded-full bg-emerald-500" />
-            <span>稳定版通道</span>
+          <div className="min-w-0 md:contents">
+            <h2 className="text-xl font-semibold tracking-[-0.03em] md:mt-6 md:text-2xl">Deek PM</h2>
+            <p className="mt-0.5 text-[length:var(--text-callout)] text-muted-foreground md:mt-1">
+              版本 {state?.currentVersion ?? '—'}
+            </p>
+            <div className="mt-2 flex items-center gap-2 text-[length:var(--text-caption)] text-muted-foreground md:mt-5">
+              <span className="size-1.5 rounded-full bg-emerald-500" />
+              <span>稳定版通道</span>
+            </div>
           </div>
-          <Button className="mt-7" size="sm" variant="ghost" onClick={() => void window.deek?.openExternal?.(releasesUrl)}>
+          <Button className="ml-auto shrink-0 md:ml-0 md:mt-7" size="sm" variant="ghost" onClick={() => void window.deek?.openExternal?.(releasesUrl)}>
             <ExternalLink size={14} />
             版本记录
           </Button>
         </aside>
 
-        <section className="flex min-w-0 flex-col justify-center px-12 py-10">
-          <div className="flex items-start justify-between gap-5">
+        <section className="flex min-w-0 flex-col justify-center px-6 py-7 md:px-12 md:py-10">
+          <div className="flex flex-wrap items-start justify-between gap-4 md:flex-nowrap md:gap-5">
             <div className="min-w-0">
               <p className="text-[length:var(--text-caption)] font-medium tracking-[0.08em] text-muted-foreground uppercase">Software Update</p>
               <h2 className="mt-2 text-[1.75rem] font-semibold tracking-[-0.035em] text-foreground">软件更新</h2>

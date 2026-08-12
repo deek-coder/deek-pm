@@ -142,14 +142,14 @@ function ApplicationUpdateDialog({ open, onOpenChange }: { open: boolean; onOpen
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="h-[min(38rem,calc(100dvh-3rem))] w-[min(60rem,calc(100vw-3rem))] max-w-none grid-rows-[4.5rem_minmax(0,1fr)] gap-0 overflow-hidden p-0 sm:max-w-none"
+        className="deek-update-dialog h-[min(38rem,calc(100dvh-3rem))] w-[min(60rem,calc(100vw-3rem))] grid-rows-[4.5rem_minmax(0,1fr)] gap-0 overflow-hidden p-0"
         onOpenAutoFocus={(event) => event.preventDefault()}
       >
         <DialogHeader className="justify-center border-b bg-background/70 px-8 py-4">
           <DialogTitle className="text-center">关于与更新</DialogTitle>
           <DialogDescription className="sr-only">查看当前版本，并从 GitHub Releases 获取软件更新。</DialogDescription>
         </DialogHeader>
-        <div className="min-h-0 overflow-y-auto">
+        <div className="min-h-0 overflow-x-hidden overflow-y-auto">
           <ApplicationUpdateCard layout="wide" />
         </div>
       </DialogContent>
