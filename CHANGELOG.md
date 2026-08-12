@@ -2,6 +2,13 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 和 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.1.2] - 2026-08-12
+
+### 修复
+
+- 修复“关于与更新”弹窗在窄窗口及 macOS 主题下宽度受限、内容被压成逐字换行并出现横向滚动的问题。
+- 更新弹窗在窄窗口使用单栏布局，宽窗口保持双栏展示。
+
 ## [0.1.1] - 2026-08-12
 
 ### 新增
@@ -35,5 +42,6 @@
 - S3 凭据与密码类条目使用应用层加密。
 - Setup Token、数据库事务锁和初始化后关闭机制防止首个管理员被抢占。
 
+[0.1.2]: https://github.com/deek-coder/deek-pm/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/deek-coder/deek-pm/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/deek-coder/deek-pm/releases/tag/v0.1.0

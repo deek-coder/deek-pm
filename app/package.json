@@ -1,7 +1,7 @@
 {
   "name": "deek-pm-app",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Deek PM desktop project knowledge manager",
   "author": "Deek PM",
   "license": "Apache-2.0",
