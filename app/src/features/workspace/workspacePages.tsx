@@ -72,6 +72,7 @@ import { connectionIconTone, deploymentLabel, iconTone, workspaceLabel } from '.
 import { officialServiceUrl, useRuntimeConfig, type SavedServiceConnection } from '../../runtimeConfigContext'
 import { ServiceStorageSettingsCard } from '../settings/ServiceStorageSettingsCard'
 import { LocalStorageSettingsCard } from '../settings/LocalStorageSettingsCard'
+import { ApplicationUpdateCard } from '../settings/ApplicationUpdateCard'
 import { changeServicePassword } from '../settings/serviceAccountApi'
 import { createServerRepositories, getServiceInstance, isInsecureRemoteServiceUrl, loginToService, normalizeServiceUrl, setupService } from '../../repositories/serverRepository'
 import { ThemeSettingsCard } from '../../theme/ThemeSettingsCard'
@@ -137,6 +138,25 @@ const emptyProjects: Project[] = []
 const emptyQuickEntries: QuickEntry[] = []
 const standardEase = [0.22, 1, 0.36, 1] as const
 
+function ApplicationUpdateDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="h-[min(38rem,calc(100dvh-3rem))] w-[min(60rem,calc(100vw-3rem))] max-w-none grid-rows-[4.5rem_minmax(0,1fr)] gap-0 overflow-hidden p-0 sm:max-w-none"
+        onOpenAutoFocus={(event) => event.preventDefault()}
+      >
+        <DialogHeader className="justify-center border-b bg-background/70 px-8 py-4">
+          <DialogTitle className="text-center">关于与更新</DialogTitle>
+          <DialogDescription className="sr-only">查看当前版本，并从 GitHub Releases 获取软件更新。</DialogDescription>
+        </DialogHeader>
+        <div className="min-h-0 overflow-y-auto">
+          <ApplicationUpdateCard layout="wide" />
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export function LaunchPage() {
   const repositories = useRepositories()
   const runtimeConfig = useRuntimeConfig()
@@ -146,6 +166,7 @@ export function LaunchPage() {
   const [rememberUnlock, setRememberUnlock] = useState(true)
   const [unlockMessage, setUnlockMessage] = useState('')
   const [serviceDialogOpen, setServiceDialogOpen] = useState(false)
+  const [appUpdateOpen, setAppUpdateOpen] = useState(false)
   const [serviceDeployment, setServiceDeployment] = useState<'cloud' | 'selfhost'>('cloud')
   const [serviceUrl, setServiceUrl] = useState(officialServiceUrl)
   const [serviceEmail, setServiceEmail] = useState('')
@@ -314,9 +335,10 @@ export function LaunchPage() {
 
   if (locked) {
     return (
-      <main className="grid min-h-screen place-items-center deek-app-bg p-10 text-foreground">
-        <WindowDragStrip />
-        <Card className="w-[420px] p-6">
+      <>
+        <main className="grid min-h-screen place-items-center deek-app-bg p-10 text-foreground">
+          <WindowDragStrip />
+          <Card className="w-[420px] p-6">
           <div className="grid h-12 w-12 place-items-center rounded-[var(--radius-control)] border border-[var(--glass-border)] bg-[image:var(--button-primary-bg)] text-foreground shadow-[var(--glass-highlight)]">
             <ShieldCheck size={24} />
           </div>
@@ -331,7 +353,7 @@ export function LaunchPage() {
             </div>
           )}
           {unlockMessage && <div className="mt-4 rounded-md border bg-[var(--surface-muted)] p-3 text-sm text-muted-foreground">{unlockMessage}</div>}
-          <form className="mt-5 grid gap-4" onSubmit={unlockLocal}>
+            <form className="mt-5 grid gap-4" onSubmit={unlockLocal}>
             <TextInput label="主密码" type="password" value={unlockPassword} onChange={(event) => setUnlockPassword(event.target.value)} />
             <label className="flex items-center gap-2 text-sm text-muted-foreground">
               <input type="checkbox" checked={rememberUnlock} onChange={(event) => setRememberUnlock(event.target.checked)} />
@@ -341,9 +363,15 @@ export function LaunchPage() {
               <ShieldCheck size={17} />
               解锁
             </Button>
-          </form>
-        </Card>
-      </main>
+            </form>
+            <Button type="button" variant="ghost" className="mt-3 w-full" onClick={() => setAppUpdateOpen(true)}>
+              <Info size={16} />
+              关于与更新
+            </Button>
+          </Card>
+        </main>
+        <ApplicationUpdateDialog open={appUpdateOpen} onOpenChange={setAppUpdateOpen} />
+      </>
     )
   }
 
@@ -405,6 +433,10 @@ export function LaunchPage() {
           >
             {runtimeConfig.config.kind === 'local' ? <Plus size={16} /> : <HardDrive size={16} />}
             {runtimeConfig.config.kind === 'local' ? '新增服务连接' : '切换到本地库（保留连接）'}
+          </Button>
+          <Button type="button" variant="ghost" className="mt-2 w-full" onClick={() => setAppUpdateOpen(true)}>
+            <Info size={16} />
+            关于与更新
           </Button>
           {runtimeConfig.config.kind === 'server' && (
             <p className="mt-2 text-xs leading-5 text-muted-foreground">仅切换当前工作模式，不会删除下方已保存的服务连接。</p>
@@ -520,6 +552,7 @@ export function LaunchPage() {
         </aside>
       </section>
       </div>
+      <ApplicationUpdateDialog open={appUpdateOpen} onOpenChange={setAppUpdateOpen} />
       <Dialog open={serviceDialogOpen} onOpenChange={(open) => {
         setServiceDialogOpen(open)
         if (!open) {
@@ -1561,6 +1594,7 @@ export function SettingsPage() {
       <PageFrame title="设置" description="服务连接与账号。切换本地库不会删除已保存连接。">
         <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
           <ThemeSettingsCard className="lg:col-span-2" />
+          <ApplicationUpdateCard className="lg:col-span-2" />
           <Card className="p-5">
             <div className="flex items-center justify-between gap-4">
               <div>
@@ -1631,6 +1665,7 @@ export function SettingsPage() {
       {settingsMessage && <div className="mb-4 rounded-lg border bg-muted/30 p-3 text-[length:var(--text-body)] text-muted-foreground">{settingsMessage}</div>}
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <ThemeSettingsCard className="lg:col-span-2" />
+        <ApplicationUpdateCard className="lg:col-span-2" />
         <Card className="p-5">
           <div className="flex items-center justify-between gap-4">
             <div>

@@ -44,5 +44,6 @@ jobs:
       - run: npm run rebuild:native
       - run: npm run lint
       - run: npm run test:migration
+      - run: npm run test:update
       - run: xvfb-run -a npm run test:local
       - run: npm run build

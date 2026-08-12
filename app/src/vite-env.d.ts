@@ -8,6 +8,24 @@ interface DeekRuntimeInfo {
   localDatabasePath?: string
 }
 
+type DeekUpdatePhase = 'unsupported' | 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'installing' | 'error'
+
+interface DeekUpdateState {
+  phase: DeekUpdatePhase
+  currentVersion: string
+  latestVersion?: string
+  releaseName?: string
+  releaseDate?: string
+  packaged: boolean
+  distribution: 'development' | 'portable' | 'installed'
+  percent?: number
+  transferred?: number
+  total?: number
+  bytesPerSecond?: number
+  message?: string
+  error?: string
+}
+
 interface DeekOpenResult {
   ok: boolean
   error?: string
@@ -101,6 +119,11 @@ interface DeekMasterPasswordPayload {
 interface Window {
   deek?: {
     getRuntimeInfo(): Promise<DeekRuntimeInfo>
+    getUpdateState(): Promise<DeekUpdateState>
+    checkForUpdates(): Promise<DeekUpdateState>
+    downloadUpdate(): Promise<DeekUpdateState>
+    installUpdate(): Promise<{ ok: boolean }>
+    onUpdateState(callback: (state: DeekUpdateState) => void): () => void
     getLegacyAssetMigrationStatus(): Promise<DeekLegacyAssetMigrationStatus>
     localRepository<T = unknown>(action: string, payload?: unknown): Promise<DeekRepositoryResult<T>>
     importLocalAsset(payload: {

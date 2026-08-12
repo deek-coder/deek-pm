@@ -1,14 +1,11 @@
 {
   "name": "deek-pm-app",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Deek PM desktop project knowledge manager",
   "author": "Deek PM",
   "license": "Apache-2.0",
   "repository": "https://github.com/deek-coder/deek-pm.git",
-  "engines": {
-    "node": ">=22.12"
-  },
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -17,6 +14,7 @@
     "rebuild:native": "npm rebuild better-sqlite3-multiple-ciphers --runtime=electron --target=41.7.1 --disturl=https://electronjs.org/headers --ignore-scripts=false",
     "test:local": "electron scripts/test-local-repository.cjs",
     "test:migration": "tsx scripts/test-migration.ts",
+    "test:update": "node --test electron/auto-updater.test.cjs",
     "migrate:legacy-assets": "electron scripts/migrate-legacy-inline-images.cjs",
     "build": "tsc -b && vite build",
     "pack": "npm run build && electron-builder --dir",
@@ -27,10 +25,18 @@
   "build": {
     "appId": "pm.deek.desktop",
     "productName": "Deek PM",
-    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "artifactName": "Deek-PM-${version}-${os}-${arch}.${ext}",
     "directories": {
       "output": "release"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "deek-coder",
+        "repo": "deek-pm",
+        "releaseType": "release"
+      }
+    ],
     "files": [
       "dist/**/*",
       "electron/**/*",
@@ -60,7 +66,7 @@
       ]
     },
     "nsis": {
-      "artifactName": "${productName}-${version}-${os}-${arch}-setup.${ext}",
+      "artifactName": "Deek-PM-${version}-${os}-${arch}-setup.${ext}",
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
@@ -69,7 +75,7 @@
       "shortcutName": "Deek PM"
     },
     "portable": {
-      "artifactName": "${productName}-${version}-${os}-${arch}-portable.${ext}"
+      "artifactName": "Deek-PM-${version}-${os}-${arch}-portable.${ext}"
     }
   },
   "dependencies": {
@@ -85,6 +91,7 @@
     "better-sqlite3-multiple-ciphers": "^12.10.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "electron-updater": "^6.8.5",
     "lucide-react": "^1.16.0",
     "motion": "^12.40.0",
     "radix-ui": "^1.4.3",

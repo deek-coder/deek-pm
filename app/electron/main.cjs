@@ -19,6 +19,8 @@ const {
   decryptEncryptedBackupEnvelope,
   isEncryptedBackupEnvelope,
 } = require('./backup-crypto.cjs')
+const { autoUpdater } = require('electron-updater')
+const { createAutoUpdateService } = require('./auto-updater.cjs')
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL)
 const localStoreFileName = 'deek-local-store.json'
@@ -27,6 +29,7 @@ let localDatabaseService = null
 let managedAssetsMigrationInProgress = false
 let legacyAssetMigrationPromise = null
 let legacyAssetMigrationStatus = { state: 'idle', scannedEntries: 0, migratedEntries: 0, migratedAssets: 0, failedEntries: 0 }
+let autoUpdateService = null
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'deek-asset', privileges: { standard: true, secure: true, supportFetchAPI: true } },
@@ -317,6 +320,7 @@ app.whenReady().then(() => {
   const localDatabase = createLocalDatabaseService({ app, safeStorage })
   localDatabaseService = localDatabase
   registerAssetProtocol()
+  autoUpdateService = createAutoUpdateService({ app, autoUpdater, getWindows: () => BrowserWindow.getAllWindows() })
   void processLocalAssetCleanupJobs(localDatabase)
     .then(() => startLegacyInlineImageMigration(localDatabase))
     .catch((error) => console.error('本地资产后台维护失败', error))
@@ -328,6 +332,11 @@ app.whenReady().then(() => {
     safeStorageAvailable: safeStorage.isEncryptionAvailable(),
     localDatabasePath: localDatabase.databasePath,
   }))
+
+  ipcMain.handle('deek:get-update-state', async () => autoUpdateService.getState())
+  ipcMain.handle('deek:check-for-updates', async () => autoUpdateService.check())
+  ipcMain.handle('deek:download-update', async () => autoUpdateService.download())
+  ipcMain.handle('deek:install-update', async () => ({ ok: autoUpdateService.install() }))
 
   ipcMain.handle('deek:get-legacy-asset-migration-status', async () => legacyAssetMigrationStatus)
 
