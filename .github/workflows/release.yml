@@ -22,7 +22,16 @@ jobs:
           node-version: 22.12.0
           cache: npm
           cache-dependency-path: app/package-lock.json
-      - run: npm ci --ignore-scripts
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            npm ci --ignore-scripts --no-audit --no-fund
+            if ($LASTEXITCODE -eq 0) { break }
+            if ($attempt -eq 3) { exit $LASTEXITCODE }
+            Write-Warning "npm ci failed (attempt $attempt/3); retrying in 15 seconds"
+            Start-Sleep -Seconds 15
+          }
       - run: npm run rebuild:native
       - run: npm run dist:win -- --publish never
       - name: Publish GitHub Release
