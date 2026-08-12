@@ -33,7 +33,8 @@ jobs:
             Start-Sleep -Seconds 15
           }
       - run: npm run rebuild:native
-      - run: npm run dist:win -- --publish never
+      - run: npm run build
+      - run: npx electron-builder --win --publish=never
       - name: Publish GitHub Release
         shell: bash
         env:
