@@ -364,7 +364,7 @@ export function KnowledgePage() {
     window.setTimeout(() => setCopyMessage(''), 1800)
   }
   const toggleGroup = (groupId: string) => {
-    setExpandedGroupIds((current) => ({ ...current, [groupId]: !(current[groupId] ?? true) }))
+    setExpandedGroupIds((current) => ({ ...current, [groupId]: !(current[groupId] ?? false) }))
   }
   const openDeletePage = (entryId: string) => {
     setPendingDeleteEntryId(entryId)
@@ -1580,7 +1580,7 @@ function RichTextEditor({ workspaceId, value, onChange, mode, spacious = false }
       {mode === 'source' && (
         <textarea
           className={cn(
-            'w-full resize-y rounded-lg border-0 bg-slate-950 p-5 font-mono text-sm leading-7 text-slate-100 outline-none',
+            'deek-source-editor w-full resize-y rounded-lg border p-5 font-mono text-sm leading-7 outline-none',
             spacious ? 'min-h-[max(38rem,calc(100dvh-19rem))]' : 'min-h-64',
           )}
           spellCheck={false}
@@ -1591,7 +1591,7 @@ function RichTextEditor({ workspaceId, value, onChange, mode, spacious = false }
       {mode === 'code' && (
         <textarea
           className={cn(
-            'w-full resize-y rounded-lg border-0 bg-slate-950 p-5 font-mono text-sm leading-7 text-slate-100 outline-none',
+            'deek-source-editor w-full resize-y rounded-lg border p-5 font-mono text-sm leading-7 outline-none',
             spacious ? 'min-h-[max(38rem,calc(100dvh-19rem))]' : 'min-h-64',
           )}
           spellCheck={false}

@@ -449,6 +449,27 @@ button:disabled {
   background: oklch(0.66 0.15 250 / 42%);
 }
 
+.deek-source-editor,
+html[data-theme='macos'] .deek-source-editor {
+  border-color: var(--code-block-border);
+  background: var(--code-block-bg);
+  color: var(--code-block-fg);
+  caret-color: var(--code-block-fg);
+  box-shadow: 0 10px 30px oklch(0.14 0.025 258 / 14%);
+  font-variant-ligatures: none;
+  tab-size: 2;
+}
+
+.deek-source-editor:focus,
+html[data-theme='macos'] .deek-source-editor:focus {
+  border-color: color-mix(in oklab, var(--ring) 68%, var(--code-block-border));
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 18%, transparent), 0 12px 34px oklch(0.14 0.025 258 / 16%);
+}
+
+.deek-source-editor::selection {
+  background: oklch(0.66 0.15 250 / 42%);
+}
+
 .deek-blocknote-editor .bn-block-content[data-content-type="codeBlock"] > div > select {
   position: absolute;
   z-index: 2;
