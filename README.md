@@ -14,6 +14,7 @@
   </p>
 
   <p>
+    <a href="#界面预览">界面预览</a> ·
     <a href="#核心能力">核心能力</a> ·
     <a href="#快速开始">快速开始</a> ·
     <a href="#系统架构">系统架构</a> ·
@@ -29,7 +30,26 @@ Deek PM 是一个面向个人与小团队的桌面知识工作台。它既可以
 正文、图片和附件不再各自为政：数据库只保存内容、元数据和引用关系，文件本体统一进入 Asset 仓储，并可落在本地目录、服务器文件系统或 S3 兼容对象存储中。
 
 > [!IMPORTANT]
-> `v0.1.0` 是首个开源预览版本，适合个人使用和自部署体验。重要数据请同时备份数据库、环境配置与资产目录。
+> 当前仍处于开源预览阶段，适合个人使用和自部署体验。重要数据请同时备份数据库、环境配置与资产目录。
+
+## 界面预览
+
+<p align="center">
+  <img src="docs/screenshots/knowledge-editor.png" width="100%" alt="Deek PM 智库编辑器：页面树、富文本编辑和附件入口" />
+</p>
+
+<p align="center"><sub>项目智库：层级页面、富文本、源码与代码模式集中在同一个编辑工作区。</sub></p>
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/launch.png" alt="Deek PM 启动页：本地库、服务连接和主题设置" /></td>
+    <td width="50%"><img src="docs/screenshots/projects.png" alt="Deek PM 项目列表：项目、快捷入口和本地工作空间" /></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>本地库与服务连接</sub></td>
+    <td align="center"><sub>项目与快捷入口</sub></td>
+  </tr>
+</table>
 
 ## 核心能力
 
